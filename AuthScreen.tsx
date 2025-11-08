@@ -7,9 +7,13 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword 
 } from 'firebase/auth';
+// 🔥 YENİ EKLENENLER: db, doc, setDoc, serverTimestamp
+import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { app } from './firebaseConfig'; 
 
 const auth = getAuth(app); 
+// 🔥 YENİ: Firestore veritabanını al
+const db = getFirestore(app);
 
 const AuthScreen = () => {
     const [email, setEmail] = useState('');
@@ -28,7 +32,18 @@ const AuthScreen = () => {
             if (isLogin) {
                 await signInWithEmailAndPassword(auth, email, password);
             } else {
-                await createUserWithEmailAndPassword(auth, email, password);
+                // 🔥 DEĞİŞİKLİK: Kayıt olan kullanıcının bilgisi "userCredential" içinde
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // 🔥 YENİ: "users" koleksiyonuna yeni kullanıcı belgesi ekle
+                // Kullanıcı ID'sini belge ID'si olarak kullanıyoruz
+                const userDocRef = doc(db, "users", user.uid);
+                await setDoc(userDocRef, {
+                    email: user.email,
+                    username: user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`, // Geçici bir kullanıcı adı
+                    createdAt: serverTimestamp()
+                });
             }
         } catch (error: any) {
             Alert.alert("Hata", error.message.replace("Firebase: ", ""));
