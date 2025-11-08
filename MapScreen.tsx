@@ -59,7 +59,7 @@ const isRouteInViewport = (coords: Coordinate[], region: Region): boolean => {
 
 const MapScreen = () => {
     // -----------------------------------------------------
-    // 1. STATE TANIMLAMALARI (SÜRE STATE'i EKLENDİ)
+    // 1. STATE TANIMLAMALARI
     // -----------------------------------------------------
     const [userId, setUserId] = useState<string>("");
     const [conqueredRoutes, setConqueredRoutes] = useState<ConqueredRoute[]>([]);
@@ -78,7 +78,7 @@ const MapScreen = () => {
     const GASP_ESIGI_KM = 0.01;
 
     // -----------------------------------------------------
-    // AUTHENTICATION - Firebase Auth Integration
+    // AUTHENTICATION
     // -----------------------------------------------------
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -95,7 +95,7 @@ const MapScreen = () => {
     }, []);
 
     // -----------------------------------------------------
-    // 2. SÜRE TAKİBİ (RUN DURATION) useEffect
+    // 2. SÜRE TAKİBİ
     // -----------------------------------------------------
     useEffect(() => {
         if (isTracking) {
@@ -170,7 +170,7 @@ const MapScreen = () => {
     };
 
     // -----------------------------------------------------
-    // 4. BAŞLANGIÇ KONUMU VE ROTA ÇEKME useEffect
+    // 4. BAŞLANGIÇ KONUMU VE ROTA ÇEKME
     // -----------------------------------------------------
     useEffect(() => {
         fetchRoutes();
@@ -200,7 +200,7 @@ const MapScreen = () => {
     }, []); 
 
     // -----------------------------------------------------
-    // PERFORMANCE OPTIMIZATION - Viewport Filtering
+    // PERFORMANCE OPTIMIZATION
     // -----------------------------------------------------
     const onRegionChangeComplete = (region: Region) => {
         const filtered = conqueredRoutes.filter(route => 
@@ -209,6 +209,9 @@ const MapScreen = () => {
         setVisibleRoutes(filtered);
     };
 
+    // -----------------------------------------------------
+    // 5. TAKİP DURUMUNU DEĞİŞTİRME FONKSİYONU
+    // -----------------------------------------------------
     // -----------------------------------------------------
     // 5. TAKİP DURUMUNU DEĞİŞTİRME FONKSİYONU
     // -----------------------------------------------------
@@ -224,7 +227,6 @@ const MapScreen = () => {
 
             const distanceKm = calculateRouteDistance(routeCoordinates);
 
-            // FIXED: Proper distance validation
             if (distanceKm < MIN_DISTANCE_KM) {
                 Alert.alert(
                     "Çok Kısa!", 
@@ -235,7 +237,6 @@ const MapScreen = () => {
                 return;
             }
 
-            // Check authentication
             if (!userId) {
                 Alert.alert("Hata", "Lütfen önce giriş yapın!");
                 setRouteCoordinates([]);
@@ -246,10 +247,10 @@ const MapScreen = () => {
             setIsSaving(true);
 
             try {
-                let scoreChange = 0;
-                const gaspedRoutes: string[] = [];
+                // Gasp Bonusu kaldırıldı
+                const gaspedRoutes: string[] = []; 
 
-                // 🔥 FIXED: Gasp Kontrolü Implementation 🔥
+                // Gasp Kontrolü (Puan bonusu olmadan)
                 for (const otherRoute of conqueredRoutes) {
                     if (otherRoute.ownerId === userId) continue;
 
@@ -260,17 +261,17 @@ const MapScreen = () => {
                     );
 
                     if (hasIntersection) {
-                        scoreChange += otherRoute.gaspScore;
                         gaspedRoutes.push(otherRoute.id);
-                        console.log(`🎯 Gasp! ${otherRoute.gaspScore} puan çalındı!`);
+                        console.log(`🎯 Gasp! Rota çalındı! (ID: ${otherRoute.id})`);
 
+                        // Sahiplik güncellemesi
                         try {
                             await updateDoc(doc(db, "routes", otherRoute.id), {
                                 ownerId: userId,
                                 gaspedAt: serverTimestamp(),
                                 previousOwner: otherRoute.ownerId
                             });
-                        } catch (updateError) {
+                        } catch (updateError: any) { // Hata yakalamayı daha güvenli hale getirelim
                             console.error("Route ownership güncellenemedi:", updateError);
                         }
                     }
@@ -278,28 +279,27 @@ const MapScreen = () => {
 
                 // Mesafe Hesaplama ve Kayıt
                 const baseScore = Math.floor(distanceKm * 10);
-                const finalScore = scoreChange + baseScore;
 
                 const geoPoints = routeCoordinates.map(
                     coord => new GeoPoint(coord.latitude, coord.longitude)
                 );
 
                 await addDoc(collection(db, "routes"), {
-                    userId: userId,
-                    ownerId: userId,
+                    userId: userId, // Rotayı ilk oluşturan
+                    ownerId: userId, // Rotanın mevcut sahibi
                     coords: geoPoints,
                     claimedAt: serverTimestamp(),
-                    gaspScore: finalScore,
+                    gaspScore: baseScore, // Rotanın puanı
                     baseScore: baseScore,
-                    gaspBonus: scoreChange,
                     distanceKm: parseFloat(distanceKm.toFixed(2)),
                     durationSeconds: Math.floor(runDuration / 1000),
-                    gaspedRoutes: gaspedRoutes
+                    gaspedRoutes: gaspedRoutes 
                 });
 
-                let message = `✅ Mesafe: ${distanceKm.toFixed(2)} km\n⏱️ Süre: ${formatDuration(runDuration)}\n🏆 Puan: ${finalScore}`;
-                if (scoreChange > 0) {
-                    message += `\n🎯 Gasp Bonusu: +${scoreChange} puan!`;
+                // Alert mesajı güncellendi
+                let message = `✅ Mesafe: ${distanceKm.toFixed(2)} km\n⏱️ Süre: ${formatDuration(runDuration)}\n🏆 Puan: ${baseScore}`;
+                if (gaspedRoutes.length > 0) { 
+                    message += `\n🎯 ${gaspedRoutes.length} bölge ele geçirildi!`;
                 }
 
                 Alert.alert("Koşu Tamamlandı!", message);
@@ -308,7 +308,7 @@ const MapScreen = () => {
                 setRouteCoordinates([]);
                 setRunDuration(0);
 
-            } catch (e) {
+            } catch (e: any) { // Hata yakalamayı daha güvenli hale getirelim
                 console.error("Rota kaydederken hata oluştu: ", e);
                 Alert.alert("Hata", "Veri kaydında hata oluştu. İnternet bağlantınızı kontrol edin.");
             } finally {
@@ -345,7 +345,7 @@ const MapScreen = () => {
                 );
                 console.log('Koşu takibi başlatıldı (Başarılı). Güncellemeler bekleniyor...'); 
 
-            } catch (error) {
+            } catch (error: any) { // 🔥 DÜZELTME: 'catch (error: any)' olarak güncellendi
                 console.error("Koşu Başlatılırken Kritik Hata:", error);
                 setErrorMsg("Takip başlatılamadı. Cihaz izinlerini kontrol edin.");
                 setIsTracking(false); 
@@ -454,7 +454,9 @@ const MapScreen = () => {
             </View>
         </View>
     );
-}
+// 🔥 DÜZELTME: ASIL EKSİK OLAN '};' EKLENDİ
+// Bu, 'const MapScreen = () => {' fonksiyonunu kapatır.
+};
 
 const styles = StyleSheet.create({
     container: {
