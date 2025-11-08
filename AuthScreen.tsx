@@ -1,4 +1,4 @@
-// BolgeFatihi/AuthScreen.tsx
+// AuthScreen.tsx
 
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
@@ -7,12 +7,12 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword 
 } from 'firebase/auth';
-// 🔥 YENİ EKLENENLER: db, doc, setDoc, serverTimestamp
 import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { app } from './firebaseConfig'; 
+// YENİ: Navigasyonu içe aktar
+import { useNavigation } from '@react-navigation/native';
 
 const auth = getAuth(app); 
-// 🔥 YENİ: Firestore veritabanını al
 const db = getFirestore(app);
 
 const AuthScreen = () => {
@@ -20,6 +20,8 @@ const AuthScreen = () => {
     const [password, setPassword] = useState('');
     const [isLogin, setIsLogin] = useState(true); 
     const [loading, setLoading] = useState(false);
+    // YENİ: Navigasyon kancası
+    const navigation = useNavigation();
 
     const handleAuthentication = async () => {
         if (!email || !password) {
@@ -32,19 +34,20 @@ const AuthScreen = () => {
             if (isLogin) {
                 await signInWithEmailAndPassword(auth, email, password);
             } else {
-                // 🔥 DEĞİŞİKLİK: Kayıt olan kullanıcının bilgisi "userCredential" içinde
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
 
-                // 🔥 YENİ: "users" koleksiyonuna yeni kullanıcı belgesi ekle
-                // Kullanıcı ID'sini belge ID'si olarak kullanıyoruz
                 const userDocRef = doc(db, "users", user.uid);
                 await setDoc(userDocRef, {
                     email: user.email,
-                    username: user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`, // Geçici bir kullanıcı adı
+                    username: user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`,
                     createdAt: serverTimestamp()
                 });
             }
+
+            // YENİ: Başarılı olursa modal'ı kapat
+            navigation.goBack(); 
+
         } catch (error: any) {
             Alert.alert("Hata", error.message.replace("Firebase: ", ""));
         } finally {
@@ -55,7 +58,7 @@ const AuthScreen = () => {
     return (
         <View style={styles.container}>
             <Text style={styles.title}>{isLogin ? 'Giriş Yap' : 'Kaydol'}</Text>
-            {/* ... geri kalan JSX içeriği ... */}
+            {/* ... geri kalan JSX içeriği (değişiklik yok) ... */}
             <TextInput
                 style={styles.input}
                 placeholder="Email"
@@ -89,6 +92,7 @@ const AuthScreen = () => {
     );
 };
 
+// Stil (Değişiklik yok)
 const styles = StyleSheet.create({
     container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#f0f0f0', },
     title: { fontSize: 32, fontWeight: 'bold', marginBottom: 30, color: '#333', },
@@ -99,5 +103,4 @@ const styles = StyleSheet.create({
     switchText: { color: '#0000FF', fontSize: 15, }
 });
 
-// 🔥 KRİTİK: Bileşeni dışarı aktarıyoruz
 export default AuthScreen;
