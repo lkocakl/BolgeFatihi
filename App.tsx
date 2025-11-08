@@ -1,25 +1,28 @@
-import React, { useState, useEffect } from 'react';
+// App.tsx
+
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack'; // YENİ
 import { Ionicons } from '@expo/vector-icons'; 
-// 🔥 YENİ EKLENENLER: Yükleme ekranı ve stil için
-import { ActivityIndicator, View, StyleSheet } from 'react-native'; 
-// 🔥 YENİ EKLENENLER: Firebase Auth durumunu dinlemek için
-import { onAuthStateChanged, User } from 'firebase/auth'; 
-import { auth } from './firebaseConfig'; 
+
+// YENİ: AuthProvider ve useAuth
+import { AuthProvider, useAuth } from './AuthContext'; 
 
 // Ana ekranlar
 import MapScreen from './MapScreen'; 
 import LeaderboardScreen from './LeaderboardScreen';
 import ProfileScreen from './ProfileScreen';
-// 🔥 YENİ: AuthScreen'i (Giriş/Kayıt) import ediyoruz
 import AuthScreen from './AuthScreen';
 
 const Tab = createBottomTabNavigator();
+const RootStack = createStackNavigator(); // YENİ
 
-// 🔥 YENİ: Ana uygulama (Tab Navigator) ayrı bir bileşen yapıldı
-// Bu bileşen SADECE kullanıcı giriş yaptığında gösterilecek
+// Ana uygulama (Tab Navigator)
 const MainAppTabs = () => {
+  // Kullanıcı durumunu Context'ten al
+  const { user } = useAuth();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -43,59 +46,63 @@ const MainAppTabs = () => {
     >
       <Tab.Screen name="Harita" component={MapScreen} />
       <Tab.Screen name="Liderler" component={LeaderboardScreen} /> 
-      <Tab.Screen name="Profil" component={ProfileScreen} />
+      
+      {/* KRİTİK DEĞİŞİKLİK: Profil sekmesine "listener" (dinleyici) ekle */}
+      <Tab.Screen 
+        name="Profil" 
+        component={ProfileScreen} 
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Eğer kullanıcı giriş yapmamışsa...
+            if (!user) {
+              // 1. Profil ekranına gitmeyi engelle
+              e.preventDefault();
+              // 2. Bunun yerine "Auth" modalını aç
+              // @ts-ignore (navigate metodu tiplerden dolayı hata verirse)
+              navigation.navigate('AuthModal');
+            }
+            // (Giriş yapmışsa normal şekilde devam eder)
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 };
 
-const App = () => {
-  // 🔥 YENİ: Kullanıcı oturum durumunu ve yükleme durumunu tut
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // 🔥 YENİ: Firebase Auth durumunu dinle
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser); // Kullanıcı varsa state'e ata, yoksa null ata
-      setLoading(false); // Dinleme tamamlandı, yükleme bitti
-    });
-
-    // Temizleme fonksiyonu: Bileşen kaldırıldığında dinlemeyi durdur
-    return () => unsubscribe();
-  }, []);
-
-  // 🔥 YENİ: Oturum kontrolü beklenirken yükleme ekranı göster
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#FF0000" />
-      </View>
-    );
-  }
-
+// YENİ: Ana Stack Navigator
+// Uygulamanın tamamını (sekmeler) ve modalı (giriş) yönetir
+const AppNavigator = () => {
   return (
-    <NavigationContainer>
-      {/* 🔥 YENİ: Koşullu Görüntüleme (Conditional Rendering)
-        - 'user' state'i doluysa (giriş yapmışsa) -> MainAppTabs'i göster
-        - 'user' state'i null ise (giriş yapmamışsa) -> AuthScreen'i göster
-      */}
-      {user ? (
-        <MainAppTabs /> 
-      ) : (
-        <AuthScreen /> 
-      )}
-    </NavigationContainer>
+    <RootStack.Navigator>
+      <RootStack.Screen 
+        name="AppTabs" // Ana uygulama (Sekmeler)
+        component={MainAppTabs}
+        options={{ headerShown: false }} 
+      />
+      <RootStack.Screen 
+        name="AuthModal" // Giriş ekranı (Modal)
+        component={AuthScreen}
+        options={{ 
+          presentation: 'modal', // Bu, ekranın alttan kayarak açılmasını sağlar
+          headerTitle: 'Giriş Yap veya Kaydol'
+        }}
+      />
+    </RootStack.Navigator>
   );
 };
 
-// 🔥 YENİ: Yükleme ekranı için stil
-const styles = StyleSheet.create({
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5' // veya 'transparent'
-  }
-});
+// Ana App bileşeni
+const App = () => {
+  // App.tsx'teki tüm state ve useEffect'ler kaldırıldı (AuthContext'e taşındı)
+  
+  return (
+    // AuthProvider tüm uygulamayı sarmalar
+    <AuthProvider>
+      <NavigationContainer>
+        <AppNavigator />
+      </NavigationContainer>
+    </AuthProvider>
+  );
+};
 
 export default App;
