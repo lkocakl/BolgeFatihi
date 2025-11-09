@@ -35,7 +35,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#FF0000" />
+        {/* --- DEĞİŞİKLİK --- */}
+        <ActivityIndicator size="large" color="#FF5722" />
+        {/* --- DEĞİŞİKLİK SONU --- */}
       </View>
     );
   }
