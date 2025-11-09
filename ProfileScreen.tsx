@@ -7,43 +7,45 @@ import {
 } from 'react-native';
 import { 
     collection, query, where, onSnapshot, 
-    doc, getDoc, updateDoc 
+    doc, getDoc, updateDoc, QuerySnapshot, DocumentData
 } from 'firebase/firestore';
 import { db, auth } from './firebaseConfig';
-import { signOut } from 'firebase/auth'; // 'User' ve 'onAuthStateChanged' kaldırıldı
-// YENİ: Auth Context
+import { signOut } from 'firebase/auth';
 import { useAuth } from './AuthContext';
 
-// ... (UserStats arayüzü aynı) ...
+// DEĞİŞİKLİK: Arayüzü genişlet
 interface UserStats {
+    // Mevcut Sahiplik
     totalRoutesOwned: number;
-    totalDistance: number; // KM
-    totalGaspScore: number;
+    totalDistanceOwned: number; // KM
+    totalGaspScoreOwned: number;
+    // Tüm Zamanlar
+    totalRuns: number; // Toplam oluşturulan koşu
+    totalDistanceRun: number; // Toplam koşulan mesafe
 }
 
 const ProfileScreen = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     
-    // DEĞİŞİKLİK: 'user' state'i SİLİNDİ, Context'ten gelen 'user' kullanılacak
-    // const [user, setUser] = useState<User | null>(null); // <-- SİL
-    const { user } = useAuth(); // <-- EKLE
+    const { user } = useAuth(); 
     
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
+    
+    // DEĞİŞİKLİK: State'i yeni arayüze göre başlat
     const [stats, setStats] = useState<UserStats>({
         totalRoutesOwned: 0,
-        totalDistance: 0,
-        totalGaspScore: 0,
+        totalDistanceOwned: 0,
+        totalGaspScoreOwned: 0,
+        totalRuns: 0,
+        totalDistanceRun: 0,
     });
 
-    // SİLİNDİ: 1. Adım - Kullanıcı oturumunu dinle
-    // useEffect(() => { ... onAuthStateChanged ... }, []);
-
-    // 2. Adım - Profil bilgilerini (username, email) çek (Değişiklik yok, 'user'a bağımlı)
+    // 2. Adım - Profil bilgilerini (username, email) çek (Değişiklik yok)
     useEffect(() => {
-        if (user) { // Context'ten gelen 'user'ı kullan
-            setLoading(true); // Yüklemeyi burada başlatmak daha mantıklı
+        if (user) { 
+            setLoading(true); 
             const fetchProfile = async () => {
                 const userDocRef = doc(db, "users", user.uid);
                 const userDocSnap = await getDoc(userDocRef);
@@ -55,17 +57,23 @@ const ProfileScreen = () => {
                 }
             };
             fetchProfile();
-            // Not: Yüklemeyi 'false'a çekmeyi 3. Adım'a (İstatistikler) bırakıyoruz
+            // Yüklemeyi 3. Adım'a bırakıyoruz
         } else {
-            // Kullanıcı yoksa (çıkış yapmışsa) temizle
+            // Kullanıcı yoksa temizle
             setUsername('');
             setEmail('');
-            setStats({ totalRoutesOwned: 0, totalDistance: 0, totalGaspScore: 0 });
+            setStats({
+                totalRoutesOwned: 0,
+                totalDistanceOwned: 0,
+                totalGaspScoreOwned: 0,
+                totalRuns: 0,
+                totalDistanceRun: 0,
+            });
             setLoading(false);
         }
-    }, [user]); // 'user'a bağımlı
+    }, [user]); 
 
-    // 3. Adım - İstatistikleri dinle (Değişiklik yok, 'user'a bağımlı)
+    // 3. Adım - İstatistikleri dinle (KOMPLE DEĞİŞTİ)
     useEffect(() => {
         if (!user) {
             setLoading(false);
@@ -74,32 +82,79 @@ const ProfileScreen = () => {
 
         setLoading(true); 
         const routesCollectionRef = collection(db, "routes");
-        const userQuery = query(routesCollectionRef, where("ownerId", "==", user.uid));
         
-        const unsubscribe = onSnapshot(userQuery, (querySnapshot) => {
+        // --- YENİ SORGULAMA MANTIĞI ---
+
+        // 1. Sorgu: Mevcut Sahipliklerim (ownerId benim)
+        const ownerQuery = query(routesCollectionRef, where("ownerId", "==", user.uid));
+        
+        // 2. Sorgu: Benim Oluşturduklarım (userId benim)
+        const creatorQuery = query(routesCollectionRef, where("userId", "==", user.uid));
+
+        const processOwnerData = (querySnapshot: QuerySnapshot<DocumentData>) => {
             let totalRoutesOwned = 0;
-            let totalDistance = 0;
-            let totalGaspScore = 0;
+            let totalDistanceOwned = 0;
+            let totalGaspScoreOwned = 0;
 
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
                 totalRoutesOwned += 1;
-                totalDistance += data.distanceKm || 0;
-                totalGaspScore += data.gaspScore || 0;
+                totalDistanceOwned += data['distanceKm'] || 0;
+                totalGaspScoreOwned += data['gaspScore'] || 0;
+            });
+            
+            // State'i GÜNCELLE (Önceki değerleri koruyarak)
+            setStats(prevStats => ({
+                ...prevStats,
+                totalRoutesOwned,
+                totalDistanceOwned: parseFloat(totalDistanceOwned.toFixed(2)),
+                totalGaspScoreOwned,
+            }));
+        };
+        
+        const processCreatorData = (querySnapshot: QuerySnapshot<DocumentData>) => {
+            let totalRuns = 0;
+            let totalDistanceRun = 0;
+
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                totalRuns += 1;
+                totalDistanceRun += data['distanceKm'] || 0;
             });
 
-            setStats({
-                totalRoutesOwned,
-                totalDistance: parseFloat(totalDistance.toFixed(2)),
-                totalGaspScore,
-            });
-            setLoading(false); // Veri çekme burada tamamlandı
+            // State'i GÜNCELLE (Önceki değerleri koruyarak)
+            setStats(prevStats => ({
+                ...prevStats,
+                totalRuns,
+                totalDistanceRun: parseFloat(totalDistanceRun.toFixed(2)),
+            }));
+        };
+
+        // İki sorguyu da aynı anda dinle
+        const unsubscribeOwner = onSnapshot(ownerQuery, (snapshot) => {
+            processOwnerData(snapshot);
+            setLoading(false); // Her iki sorgudan biri bittiğinde yüklemeyi kapatabiliriz
         }, (error) => {
-            console.error("Kullanıcı istatistikleri çekilirken hata oluştu: ", error);
+            console.error("Sahiplik istatistikleri çekilirken hata oluştu: ", error);
+            setLoading(false);
+        });
+        
+        const unsubscribeCreator = onSnapshot(creatorQuery, (snapshot) => {
+            processCreatorData(snapshot);
+            setLoading(false);
+        }, (error) => {
+            console.error("Oluşturucu istatistikleri çekilirken hata oluştu: ", error);
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        // Bileşen (component) kaldırıldığında iki dinleyiciyi de kapat
+        return () => {
+            unsubscribeOwner();
+            unsubscribeCreator();
+        };
+        
+        // --- SORGULAMA MANTIĞI SONU ---
+        
     }, [user]); // 'user'a bağımlı
 
     // Kullanıcı adını güncelleme (Değişiklik yok)
@@ -136,13 +191,13 @@ const ProfileScreen = () => {
     if (loading && user) { 
         return (
             <View style={styles.centerContainer}>
-                <ActivityIndicator size="large" color="#FF0000" />
+                <ActivityIndicator size="large" color="#FF5722" /> 
                 <Text style={styles.text}>Profil Yükleniyor...</Text>
             </View>
         );
     }
 
-    // Kullanıcı giriş yapmamışsa (Bu ekran artık gösterilmemeli ama kod kalsa zararı olmaz)
+    // Kullanıcı giriş yapmamışsa (Değişiklik yok)
     if (!user) {
         return (
             <View style={styles.centerContainer}>
@@ -166,14 +221,24 @@ const ProfileScreen = () => {
                 </TouchableOpacity>
             </View>
 
-            <Text style={styles.statsTitle}>Genel İstatistikler</Text>
             
-            {/* İstatistik kutuları (Değişiklik yok) */}
+            {/* --- DEĞİŞİKLİK: İstatistik Başlıkları ve Kutuları --- */}
+            
+            <Text style={styles.statsTitle}>Rekabet İstatistikleri (Mevcut Sahiplik)</Text>
             <View style={styles.statsGrid}>
-                <StatBox title="Sahip Olunan Bölge" value={`${stats.totalRoutesOwned}`} unit="Adet" color="#007AFF" />
-                <StatBox title="Sahip Olunan Mesafe" value={`${stats.totalDistance}`} unit="KM" color="#4CD964" />
-                <StatBox title="Toplam Bölge Puanı" value={`${stats.totalGaspScore}`} unit="Puan" color="#FF0000" />
+                <StatBox title="Sahip Olunan Bölge" value={`${stats.totalRoutesOwned}`} unit="Adet" color="#2196F3" />
+                <StatBox title="Sahip Olunan Mesafe" value={`${stats.totalDistanceOwned}`} unit="KM" color="#2196F3" />
+                <StatBox title="Toplam Bölge Puanı" value={`${stats.totalGaspScoreOwned}`} unit="Puan" color="#FFC107" />
             </View>
+
+            <Text style={styles.statsTitle}>Kişisel İstatistikler (Tüm Zamanlar)</Text>
+            <View style={styles.statsGrid}>
+                <StatBox title="Toplam Koşu" value={`${stats.totalRuns}`} unit="Adet" color="#4CAF50" />
+                <StatBox title="Toplam Mesafe" value={`${stats.totalDistanceRun}`} unit="KM" color="#4CAF50" />
+            </View>
+
+            {/* --- DEĞİŞİKLİK SONU --- */}
+
 
             {/* Info ve Çıkış Butonu (Değişiklik yok) */}
             <Text style={styles.infoText}>
@@ -188,7 +253,6 @@ const ProfileScreen = () => {
 
 // StatBox bileşeni (Değişiklik yok)
 const StatBox = ({ title, value, unit, color }: { title: string, value: string, unit: string, color: string }) => (
-    // ... (kod aynı)
     <View style={styles.statBox}>
         <Text style={[styles.statValue, { color: color }]}>{value}</Text>
         <Text style={styles.statUnit}>{unit}</Text>
@@ -204,7 +268,9 @@ const styles = StyleSheet.create({
     header: { fontSize: 28, fontWeight: '900', color: '#333', marginBottom: 20, textAlign: 'center', },
     statsTitle: { fontSize: 20, fontWeight: 'bold', color: '#555', marginBottom: 15, textAlign: 'center', borderBottomWidth: 2, borderBottomColor: '#ddd', paddingBottom: 5, },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', marginBottom: 30, },
-    statBox: { backgroundColor: 'white', borderRadius: 15, padding: 15, width: '45%', alignItems: 'center', marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, },
+    statBox: { backgroundColor: 'white', borderRadius: 15, padding: 15, width: '45%', alignItems: 'center', marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, minHeight: 120, // Opsiyonel: Kutuların eşit boyda görünmesi için
+        justifyContent: 'center', // Opsiyonel
+    },
     statValue: { fontSize: 36, fontWeight: 'bold', },
     statUnit: { fontSize: 14, color: '#888', marginBottom: 5, },
     statTitle: { fontSize: 16, fontWeight: '500', textAlign: 'center', color: '#333', },
@@ -213,10 +279,10 @@ const styles = StyleSheet.create({
     label: { fontSize: 14, color: '#555', marginBottom: 5, fontWeight: '500', },
     input: { width: '100%', padding: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, marginBottom: 15, backgroundColor: '#fff', fontSize: 16, },
     disabledInput: { backgroundColor: '#f0f0f0', color: '#888', },
-    button: { width: '100%', padding: 15, borderRadius: 8, backgroundColor: '#00cc00', alignItems: 'center', },
+    button: { width: '100%', padding: 15, borderRadius: 8, backgroundColor: '#4CAF50', alignItems: 'center', },
     buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', },
     disabledButton: { backgroundColor: '#aaa', },
-    signOutButton: { marginVertical: 30, padding: 15, borderRadius: 8, backgroundColor: '#ff3333', alignItems: 'center', },
+    signOutButton: { marginVertical: 30, padding: 15, borderRadius: 8, backgroundColor: '#F44336', alignItems: 'center', },
     signOutButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold', },
 });
 
