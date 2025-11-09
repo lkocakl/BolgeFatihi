@@ -39,7 +39,9 @@ const MainAppTabs = () => {
           // @ts-ignore
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#FF0000',
+        // --- DEĞİŞİKLİK ---
+        tabBarActiveTintColor: '#FF5722', // '#FF0000' yerine Enerji Turuncusu
+        // --- DEĞİŞİKLİK SONU ---
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
       })}
