@@ -1,3 +1,5 @@
+// LeaderboardScreen.tsx
+
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { collection, query, onSnapshot, DocumentData, QuerySnapshot } from 'firebase/firestore';
@@ -112,7 +114,7 @@ const LeaderboardScreen = () => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#FF5722" />
+        <ActivityIndicator size="large" color="#388E3C" />
         <Text style={styles.text}>Liderlik Tablosu Yükleniyor...</Text>
       </View>
     );
@@ -148,7 +150,7 @@ const LeaderboardScreen = () => {
         keyExtractor={(item) => item.userId} 
         renderItem={({ item, index }) => (
           <View style={styles.row}>
-            <Text style={[styles.rank, { color: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#333' }]}>
+            <Text style={[styles.rank, { color: index === 0 ? '#FBC02D' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#424242' }]}>
               #{index + 1}
             </Text>
             <Text style={styles.userId}>{item.username}</Text>
@@ -160,16 +162,18 @@ const LeaderboardScreen = () => {
   );
 };
 
+// Stiller (YENİ RENKLER)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 50,
-    backgroundColor: '#f5f5f5', 
+    backgroundColor: '#F4F4F1', // Açık Toprak Rengi
   },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#F4F4F1', // Açık Toprak Rengi
   },
   // YENİ: TAB STİLLERİ
   tabContainer: {
@@ -177,7 +181,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 20,
     marginBottom: 20,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#E0E0E0', // Nötr Gri
     borderRadius: 10,
     overflow: 'hidden',
   },
@@ -188,12 +192,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabButtonActive: {
-    backgroundColor: '#FF5722', // Ana "Enerji Turuncusu"
+    backgroundColor: '#388E3C', // Sağlık Yeşili
   },
   tabText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#555',
+    color: '#424242', // Koyu Toprak
   },
   tabTextActive: {
     color: '#fff',
@@ -202,7 +206,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 24,
     fontWeight: '900',
-    color: '#333',
+    color: '#424242', // Koyu Toprak
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -230,18 +234,18 @@ const styles = StyleSheet.create({
   userId: { 
     flex: 1,
     fontSize: 16,
-    color: '#2196F3', // "Gökyüzü Mavisi"
+    color: '#1E88E5', // Gökyüzü Mavisi
     fontWeight: '600',
   },
   score: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFC107', // "Altın Rengi"
+    color: '#FBC02D', // Güneş Sarısı
   },
   text: {
       marginTop: 20,
       fontSize: 16,
-      color: '#666',
+      color: '#757575', // Orta Gri
   }
 });
 
