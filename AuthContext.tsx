@@ -36,7 +36,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return (
       <View style={styles.centerContainer}>
         {/* --- DEĞİŞİKLİK --- */}
-        <ActivityIndicator size="large" color="#FF5722" />
+        <ActivityIndicator size="large" color="#388E3C" />
         {/* --- DEĞİŞİKLİK SONU --- */}
       </View>
     );
@@ -56,12 +56,12 @@ export const useAuth = () => {
   return useContext(AuthContext);
 };
 
-// Yükleme stili (App.tsx'ten alındı)
+// Yükleme stili (YENİ RENKLER)
 const styles = StyleSheet.create({
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5'
+    backgroundColor: '#F4F4F1' // Açık Toprak Rengi
   }
 });
