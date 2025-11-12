@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "BolgeFatihi",
+    "slug": "BolgeFatihi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Koşu rotanızı haritada takip etmek için konumunuza ihtiyaç var.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Uygulama arka plandayken de koşu rotanızı takip etmek için konumunuza her zaman ihtiyaç var."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff",
+        "package": "com.lkocakl.bolgefatihi"
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
+      ],
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "dcafedf0-b02d-47a1-b3ae-4f9ba3dea6ea"
+      }
+    }
+  }
+}
