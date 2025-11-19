@@ -4,22 +4,28 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-firebase/app": "^23.5.0",
     "@react-native-firebase/firestore": "^23.5.0",
     "@react-navigation/bottom-tabs": "^7.7.3",
+    "@react-navigation/native": "^7.0.11",
     "@react-navigation/stack": "^7.6.3",
     "@turf/turf": "^7.2.0",
-    "expo": "~54.0.22",
-    "expo-auth-session": "~7.0.8",
+    "expo": "~54.0.25",
+    "expo-auth-session": "~7.0.9",
     "expo-crypto": "~15.0.7",
+    "expo-haptics": "~15.0.7",
+    "expo-image-picker": "~17.0.8",
+    "expo-linear-gradient": "~15.0.7",
     "expo-location": "~19.0.7",
     "expo-status-bar": "~3.0.8",
+    "expo-task-manager": "~14.0.8",
     "expo-web-browser": "~15.0.9",
     "firebase": "^12.5.0",
     "geofire-common": "^6.0.0",
@@ -27,8 +33,7 @@
     "react-native": "0.81.5",
     "react-native-maps": "1.20.1",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-screens": "~4.16.0",
-    "undefined": "react-navigation/native"
+    "react-native-screens": "~4.16.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

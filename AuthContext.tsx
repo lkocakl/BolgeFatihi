@@ -1,16 +1,24 @@
-// AuthContext.tsx
-
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from './firebaseConfig';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
+
+interface UserProfile {
+  username?: string;
+  email?: string;
+  profileImage?: string;
+  // Add other profile fields as needed
+}
 
 interface AuthContextType {
   user: User | null;
+  userProfile: UserProfile | null;
+  loading: boolean;
 }
 
 // 1. Context'i oluştur
-const AuthContext = createContext<AuthContextType>({ user: null });
+const AuthContext = createContext<AuthContextType>({ user: null, userProfile: null, loading: true });
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -19,15 +27,33 @@ interface AuthProviderProps {
 // 2. Provider'ı (Sağlayıcı) oluştur
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true); // Başlangıçta yükleniyor
 
   useEffect(() => {
-    // Bu kod App.tsx'ten taşındı
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser) {
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            setUserProfile(userDocSnap.data() as UserProfile);
+          } else {
+            setUserProfile(null);
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          setUserProfile(null);
+        }
+      } else {
+        setUserProfile(null);
+      }
+
       setLoading(false);
     });
-    
+
     return () => unsubscribe();
   }, []);
 
@@ -35,9 +61,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        {/* --- DEĞİŞİKLİK --- */}
         <ActivityIndicator size="large" color="#388E3C" />
-        {/* --- DEĞİŞİKLİK SONU --- */}
       </View>
     );
   }
@@ -45,7 +69,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Yükleme bittiyse ve kullanıcı durumu belliyse (null veya dolu),
   // uygulamayı (children) AuthContext.Provider ile sarmala
   return (
-    <AuthContext.Provider value={{ user }}>
+    <AuthContext.Provider value={{ user, userProfile, loading }}>
       {children}
     </AuthContext.Provider>
   );

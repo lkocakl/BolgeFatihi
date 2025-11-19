@@ -1,4 +1,5 @@
 // BolgeFatihi/utils.ts
+
 export interface Coordinate {
   latitude: number;
   longitude: number;
@@ -62,57 +63,8 @@ export const calculateRouteDistance = (coordinates: { latitude: number; longitud
 
   return totalDistance;
 };
-// BolgeFatihi/utils.ts (Mevcut içeriğin sonuna ekleyin)
-// ... (calculateRouteDistance fonksiyonundan sonra)
 
-// Bu fonksiyonlar, Turf.js'in yapacağı işi basitleştirilmiş GeoJSON formatıyla taklit eder.
-// Normalde burada profesyonel bir GeoJSON ve Turf.js kütüphanesi entegrasyonu olurdu.
-// React Native'de bu kadar karmaşık kütüphane eklemek yerine, temel mantığı uygulayacağız.
-
-/**
- * Koşu rotasının etrafında, fethedilen bölgeyi temsil eden basit bir alan (Polyline Buffer) oluşturur.
- * Gerçekte Turf.js'in buffer fonksiyonu kullanılır. Biz burada Polyline'ı döndürüyoruz.
- * İleride Poligon görselleştirmesi için bu alanın sınırları kullanılacaktır.
- * @param coordinates Koşu rotası koordinatları
- * @param bufferKm Rotanın her iki yanındaki tampon genişliği (km)
- * @returns Rota koordinatları (şimdilik)
- */
-export const createRouteBuffer = (coordinates: Coordinate[], bufferKm: number): Coordinate[] => {
-    // BURASI ÇOK KRİTİK BİR YERDİR. 
-    // Turf.js kullanarak bir "Polyline Buffer" oluşturmamız gerekirdi, 
-    // bu da koşu hattının sağ ve sol tarafına 5-10 metre genişliğinde bir poligon çizerdi.
-    // Şimdilik, sadece rotanın kendisini döndürüyoruz.
-    return coordinates; 
-    
-    // Not: Gerçek bir uygulamada, bu kod, rotanın etrafında bir çokgen oluşturur.
-};
-
-/**
- * İki Poligon (Rotanın Tampon Bölgeleri) arasındaki çakışmayı kontrol eden basitleştirilmiş fonksiyon.
- * Gerçekte Turf.js'in intersect fonksiyonu kullanılır.
- * Bizim mevcut basit gasp mantığımızı burada tutarız: İki rota birbirine çok yakın mı?
- * @param newRoute Yeni kaydedilen rota
- * @param existingRoute Rakip rota
- * @param gaspEşigiKm Gasp eşiği (km)
- * @returns Çakışma varsa true, yoksa false.
- */
-export const checkSimplifiedIntersection = (newRoute: Coordinate[], existingRoute: Coordinate[], gaspEşigiKm: number): boolean => {
-    
-    // Basitçe: Yeni rotadaki her noktayı, eski rotadaki her noktaya karşı kontrol et.
-    for (const newCoord of newRoute) {
-        for (const oldCoord of existingRoute) {
-            const distance = calculateDistance(
-                newCoord.latitude, 
-                newCoord.longitude, 
-                oldCoord.latitude, 
-                oldCoord.longitude
-            );
-            
-            if (distance <= gaspEşigiKm) {
-                // Herhangi bir nokta, eşiğin altındaysa çakışma var say
-                return true; 
-            }
-        }
-    }
-    return false;
-};
+// --- DÜZELTME ---
+// 'createRouteBuffer' ve 'checkSimplifiedIntersection' fonksiyonları kaldırıldı.
+// Bu fonksiyonlar artık kullanılmıyordu, MapScreen.tsx doğrudan Turf.js kullanıyor.
+// --- DÜZELTME SONU ---

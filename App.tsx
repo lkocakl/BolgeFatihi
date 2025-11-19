@@ -7,7 +7,8 @@ import { createStackNavigator } from '@react-navigation/stack'; // YENİ
 import { Ionicons } from '@expo/vector-icons'; 
 
 // YENİ: AuthProvider ve useAuth
-import { AuthProvider, useAuth } from './AuthContext'; 
+import { AuthProvider, useAuth } from './AuthContext';
+import ErrorBoundary from './ErrorBoundary'; 
 
 // Ana ekranlar
 import MapScreen from './MapScreen'; 
@@ -36,8 +37,7 @@ const MainAppTabs = () => {
           } else if (route.name === 'Profil') {
             iconName = focused ? 'person-circle' : 'person-circle-outline';
           }
-          // @ts-ignore
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName as any} size={size} color={color} />;
         },
         // --- DEĞİŞİKLİK ---
         tabBarActiveTintColor: '#388E3C', // Sağlık Yeşili
@@ -60,8 +60,7 @@ const MainAppTabs = () => {
               // 1. Profil ekranına gitmeyi engelle
               e.preventDefault();
               // 2. Bunun yerine "Auth" modalını aç
-              // @ts-ignore (navigate metodu tiplerden dolayı hata verirse)
-              navigation.navigate('AuthModal');
+              (navigation as any).navigate('AuthModal');
             }
             // (Giriş yapmışsa normal şekilde devam eder)
           },
@@ -98,12 +97,14 @@ const App = () => {
   // App.tsx'teki tüm state ve useEffect'ler kaldırıldı (AuthContext'e taşındı)
   
   return (
-    // AuthProvider tüm uygulamayı sarmalar
-    <AuthProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
-    </AuthProvider>
+    <ErrorBoundary>
+      {/* AuthProvider tüm uygulamayı sarmalar */}
+      <AuthProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 };
 

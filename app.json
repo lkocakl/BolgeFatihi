@@ -16,14 +16,16 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Koşu rotanızı haritada takip etmek için konumunuza ihtiyaç var.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Uygulama arka plandayken de koşu rotanızı takip etmek için konumunuza her zaman ihtiyaç var."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Uygulama arka plandayken de koşu rotanızı takip etmek için konumunuza her zaman ihtiyaç var.",
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff",
-        "package": "com.lkocakl.bolgefatihi"
+        "backgroundColor": "#ffffff"
       },
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -31,13 +33,20 @@
         "android.permission.ACCESS_BACKGROUND_LOCATION"
       ],
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.kocak.BolgeFatihi"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Uygulama arka plandayken de koşu rotanızı takip etmek için konumunuza her zaman ihtiyaç var."
+        }
+      ]
     ],
     "extra": {
       "eas": {

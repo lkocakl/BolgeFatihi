@@ -1,97 +1,45 @@
-// AuthScreen.tsx
-
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
-import { 
-    getAuth, 
-    createUserWithEmailAndPassword, 
+import React, { useState } from 'react';
+import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import {
+    getAuth,
+    createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
-    GoogleAuthProvider, // Google için eklendi (kalsa da zararı yok)
-    signInWithCredential // Google için eklendi (kalsa da zararı yok)
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore'; // getDoc eklendi
-import { app } from './firebaseConfig'; 
+import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { app } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
-// import * as WebBrowser from 'expo-web-browser'; // --- Google için devre dışı bırakıldı ---
-// import * as Google from 'expo-auth-session/providers/google'; // --- Google için devre dışı bırakıldı ---
+import { LinearGradient } from 'expo-linear-gradient';
+import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-// Google giriş pop-up'ının kapanmasını sağlar
-// WebBrowser.maybeCompleteAuthSession(); // --- Google için devre dışı bırakıldı ---
-
-// --- 1. ADIM (WEB): Firebase'den aldığınız WEB ID ---
-// const WEB_CLIENT_ID = "<BURAYA-WEB-CLIENT-ID-YAPIŞTIRIN>"; // --- Google için devre dışı bırakıldı ---
-
-// --- 2. ADIM (ANDROID): Adım B'de oluşturduğunuz YENİ ANDROID ID ---
-// const ANDROID_CLIENT_ID = "<BURAYA-YENİ-ANDROID-CLIENT-ID-YAPIŞTIRIN>"; // --- Google için devre dışı bırakıldı ---
-// ---------------------------------------------------
-
-const auth = getAuth(app); 
+const auth = getAuth(app);
 const db = getFirestore(app);
 
 const AuthScreen = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [isLogin, setIsLogin] = useState(true); 
+    const [isLogin, setIsLogin] = useState(true);
     const [loading, setLoading] = useState(false);
-    // const [loadingGoogle, setLoadingGoogle] = useState(false); // --- Google için devre dışı bırakıldı ---
     const navigation = useNavigation();
 
-    // --- Google Giriş Kancaları (Hooks) ---
-    // const [request, response, promptAsync] = Google.useIdTokenAuthRequest({ // --- Google için devre dışı bırakıldı ---
-    //     webClientId: WEB_CLIENT_ID,
-    //     androidClientId: ANDROID_CLIENT_ID,
-    // });
-    // --- Google Kancaları Sonu ---
+    const isValidEmail = (email: string): boolean => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    };
 
-    // --- Google Giriş Yanıtını İşleme ---
-    // useEffect(() => { // --- Google için devre dışı bırakıldı ---
-    //     if (response?.type === 'success') {
-    //         setLoadingGoogle(true);
-    //         // @ts-ignore - id_token'in params'ta olduğunu biliyoruz
-    //         const { id_token } = response.params;
-            
-    //         const credential = GoogleAuthProvider.credential(id_token);
-            
-    //         signInWithCredential(auth, credential)
-    //             .then(async (userCredential) => {
-    //                 const user = userCredential.user;
-                    
-    //                 // Yeni kullanıcı mı diye kontrol et
-    //                 const userDocRef = doc(db, "users", user.uid);
-    //                 const docSnap = await getDoc(userDocRef);
-
-    //                 if (!docSnap.exists()) {
-    //                     // Yeni kullanıcıysa Firestore'a kaydet
-    //                     await setDoc(userDocRef, {
-    //                         email: user.email,
-    //                         // Google ismini al, yoksa e-postayı kullan
-    //                         username: user.displayName || user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`,
-    //                         createdAt: serverTimestamp()
-    //                     });
-    //                     console.log("Yeni Google kullanıcısı Firestore'a eklendi.");
-    //                 }
-                    
-    //                 navigation.goBack(); // Giriş başarılı, modal'ı kapat
-    //             })
-    //             .catch((error) => {
-    //                 console.log("Firebase signInWithCredential hatası:", error);
-    //                 Alert.alert("Hata (Google)", error.message);
-    //             })
-    //             .finally(() => {
-    //                 setLoadingGoogle(false);
-    //             });
-    //     } else if (response?.type === 'error') {
-    //         console.log("Google Auth Hatası:", response.error);
-    //         Alert.alert("Google Giriş Hatası", "Giriş sırasında bir hata oluştu veya işlem iptal edildi.");
-    //     }
-    // }, [response]);
-    // --- Google Yanıt İşleme Sonu ---
-
-
-    // E-posta/Şifre ile giriş/kayıt
     const handleAuthentication = async () => {
         if (!email || !password) {
             Alert.alert("Hata", "Lütfen email ve şifre girin.");
+            return;
+        }
+
+        if (!isValidEmail(email)) {
+            Alert.alert("Hata", "Lütfen geçerli bir email adresi girin.");
+            return;
+        }
+
+        if (password.length < 6) {
+            Alert.alert("Hata", "Şifre en az 6 karakter olmalıdır.");
             return;
         }
 
@@ -111,180 +59,199 @@ const AuthScreen = () => {
                 });
             }
 
-            navigation.goBack(); 
+            (navigation as any).goBack();
 
         } catch (error: any) {
-            Alert.alert("Hata", error.message.replace("Firebase: ", ""));
+            let errorMessage = error.message.replace("Firebase: ", "").replace("Firebase Auth: ", "");
+            if (error.code === 'auth/user-not-found') {
+                errorMessage = "Bu email adresi ile kayıtlı kullanıcı bulunamadı.";
+            } else if (error.code === 'auth/wrong-password') {
+                errorMessage = "Şifre yanlış.";
+            } else if (error.code === 'auth/email-already-in-use') {
+                errorMessage = "Bu email adresi zaten kullanılıyor.";
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = "Şifre çok zayıf. Daha güçlü bir şifre seçin.";
+            } else if (error.code === 'auth/invalid-email') {
+                errorMessage = "Geçersiz email adresi.";
+            }
+            Alert.alert("Hata", errorMessage);
         } finally {
             setLoading(false);
         }
     };
 
-    // Google SVG ikonu (Satır içi)
-    // const GoogleIcon = () => ( // --- Google için devre dışı bırakıldı ---
-    //     <Image
-    //         source={{ uri: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj48cGF0aCBkPSJNMTcuNiA5LjJsLS4xLTEuOEg5djMuNGgyLjhDMTFoMTMuMiA5LjcgMTQuNyA4LjEgMTQuNyAxMi4yYzAgMy4yLTIuNyA1LjUtNiA1LjVTMiAxNS40IDIgMTIuMiAyLjcgNi4yIDYgNi43YzEuMiAwIDIuMy40IDMuMiAxLjNsMi4yLTIuN0M5LjYgMy42IDcuOSA1IDYgNSAyLjcgNSA1IDcuOCA1IDExLjhzMi43IDYuMyA2LjMgNi4zYzMuMyAwIDUuNy0yLjMgNS43LTUuOUMxMiAyMi41IDExLjMgMjIuMSAxMSA5LjJ6IiBmaWxsPSIjRkZGIiBmaWxsLXJ1bGU9Im5vbnplcm8iLz48cGF0aCBkPSJNMCAwdjE4aDE4VjBIMHoiLz48L2c+PC9zdmc+' }}
-    //         style={styles.googleButtonIcon}
-    //     />
-    // );
-
-
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>{isLogin ? 'Giriş Yap' : 'Kaydol'}</Text>
-            
-            <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor="#9E9E9E" 
-            />
-            <TextInput
-                style={styles.input}
-                placeholder="Şifre"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                placeholderTextColor="#9E9E9E" 
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+            <LinearGradient
+                colors={[COLORS.surface, '#E8F5E9']}
+                style={StyleSheet.absoluteFill}
             />
 
-            {/* Email/Şifre Butonu */}
-            {loading ? (
-                <ActivityIndicator size="large" color="#388E3C" style={styles.button} />
-            ) : (
-                <TouchableOpacity 
-                    style={styles.button} 
-                    onPress={handleAuthentication}
-                    disabled={loading} // --- DÜZELTME: Google kancaları kaldırıldı
-                >
-                    <Text style={styles.buttonText}>{isLogin ? 'Giriş Yap' : 'Kaydol'}</Text>
-                </TouchableOpacity>
-            )}
+            <View style={styles.content}>
+                <View style={styles.headerContainer}>
+                    <MaterialCommunityIcons name="map-marker-radius" size={64} color={COLORS.primary} />
+                    <Text style={styles.appTitle}>Bölge Fatihi</Text>
+                    <Text style={styles.subtitle}>Şehri Fethetmeye Hazır Mısın?</Text>
+                </View>
 
-            {/* Ayırıcı */}
-            {/* <View style={styles.dividerContainer}> // --- Google için devre dışı bırakıldı ---
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>veya</Text>
-                <View style={styles.dividerLine} />
-            </View> */}
+                <View style={styles.formCard}>
+                    <Text style={styles.formTitle}>{isLogin ? 'Giriş Yap' : 'Hesap Oluştur'}</Text>
 
-            {/* Google Giriş Butonu */}
-            {/* <TouchableOpacity  // --- Google için devre dışı bırakıldı ---
-                style={styles.googleButton} 
-                onPress={() => promptAsync()}
-                disabled={!request || loading || loadingGoogle}
-            >
-                {loadingGoogle ? (
-                    <ActivityIndicator color="#424242" />
-                ) : (
-                    <>
-                        <GoogleIcon />
-                        <Text style={styles.googleButtonText}>Google ile Giriş Yap</Text>
-                    </>
-                )}
-            </TouchableOpacity> */}
+                    <View style={styles.inputContainer}>
+                        <MaterialCommunityIcons name="email-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Email Adresi"
+                            value={email}
+                            onChangeText={setEmail}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            placeholderTextColor={COLORS.textSecondary}
+                            editable={!loading}
+                        />
+                    </View>
 
+                    <View style={styles.inputContainer}>
+                        <MaterialCommunityIcons name="lock-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Şifre"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry
+                            placeholderTextColor={COLORS.textSecondary}
+                            editable={!loading}
+                        />
+                    </View>
 
-            <TouchableOpacity 
-                onPress={() => setIsLogin(!isLogin)} 
-                style={styles.switchTextContainer}
-                disabled={loading} // --- DÜZELTME: Google kancaları kaldırıldı
-            >
-                <Text style={styles.switchText}>
-                    {isLogin ? 'Hesabınız yok mu? Kaydolun' : 'Zaten bir hesabınız var mı? Giriş yapın'}
-                </Text>
-            </TouchableOpacity>
-        </View>
+                    <TouchableOpacity
+                        onPress={handleAuthentication}
+                        disabled={loading}
+                        activeOpacity={0.8}
+                        style={styles.authButtonContainer}
+                    >
+                        <LinearGradient
+                            colors={COLORS.primaryGradient as [string, string, ...string[]]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.authButton}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text style={styles.buttonText}>{isLogin ? 'GİRİŞ YAP' : 'KAYIT OL'}</Text>
+                            )}
+                        </LinearGradient>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => setIsLogin(!isLogin)}
+                        style={styles.switchButton}
+                        disabled={loading}
+                    >
+                        <Text style={styles.switchText}>
+                            {isLogin ? 'Hesabınız yok mu? ' : 'Zaten hesabınız var mı? '}
+                            <Text style={styles.switchTextBold}>{isLogin ? 'Kaydolun' : 'Giriş Yapın'}</Text>
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </KeyboardAvoidingView>
     );
 };
 
-// Stil
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        padding: 20, 
-        backgroundColor: '#F4F4F1', // Açık Toprak Rengi
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.background,
     },
-    title: { 
-        fontSize: 32, 
-        fontWeight: 'bold', 
-        marginBottom: 30, 
-        color: '#424242', // Koyu Toprak
+    content: {
+        flex: 1,
+        justifyContent: 'center',
+        padding: SPACING.l,
     },
-    input: { 
-        width: '100%', 
-        padding: 15, 
-        borderWidth: 1, 
-        borderColor: '#ddd', 
-        borderRadius: 8, 
-        marginBottom: 15, 
-        backgroundColor: '#fff', 
-        fontSize: 16, 
-        color: '#424242', // Yazı rengi
+    headerContainer: {
+        alignItems: 'center',
+        marginBottom: SPACING.xl,
     },
-    button: { 
-        width: '100%', 
-        padding: 15, 
-        borderRadius: 8, 
-        backgroundColor: '#388E3C', // Sağlık Yeşili
-        alignItems: 'center', 
-        marginBottom: 10, 
-        minHeight: 50, // Yükleme göstergesi için min yükseklik
+    appTitle: {
+        fontSize: 32,
+        fontWeight: '900',
+        color: COLORS.primaryDark,
+        marginTop: SPACING.s,
+        letterSpacing: 1,
+    },
+    subtitle: {
+        fontSize: FONT_SIZES.m,
+        color: COLORS.textSecondary,
+        marginTop: SPACING.xs,
+    },
+    formCard: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 24,
+        padding: SPACING.l,
+        ...SHADOWS.medium,
+    },
+    formTitle: {
+        fontSize: FONT_SIZES.xl,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        marginBottom: SPACING.l,
+        textAlign: 'center',
+    },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.background,
+        borderRadius: 12,
+        paddingHorizontal: SPACING.m,
+        marginBottom: SPACING.m,
+        height: 56,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    inputIcon: {
+        marginRight: SPACING.s,
+    },
+    input: {
+        flex: 1,
+        fontSize: FONT_SIZES.m,
+        color: COLORS.text,
+        height: '100%',
+    },
+    authButtonContainer: {
+        marginTop: SPACING.s,
+        borderRadius: 12,
+        overflow: 'hidden',
+        ...SHADOWS.small,
+    },
+    authButton: {
+        paddingVertical: 16,
+        alignItems: 'center',
         justifyContent: 'center',
     },
-    buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold', },
-    
-    // --- YENİ Stiller: Google Butonu ve Ayırıcı ---
-    // dividerContainer: { // --- Google için devre dışı bırakıldı ---
-    //     flexDirection: 'row',
-    //     alignItems: 'center',
-    //     width: '100%',
-    //     marginVertical: 20,
-    // },
-    // dividerLine: { // --- Google için devre dışı bırakıldı ---
-    //     flex: 1,
-    //     height: 1,
-    //     backgroundColor: '#ddd',
-    // },
-    // dividerText: { // --- Google için devre dışı bırakıldı ---
-    //     marginHorizontal: 10,
-    //     color: '#757575', // Orta Gri
-    //     fontSize: 14,
-    // },
-    // googleButton: { // --- Google için devre dışı bırakıldı ---
-    //     flexDirection: 'row',
-    //     alignItems: 'center',
-    //     justifyContent: 'center',
-    //     backgroundColor: '#FFFFFF',
-    //     width: '100%',
-    //     padding: 15,
-    //     borderRadius: 8,
-    //     borderWidth: 1,
-    //     borderColor: '#ddd',
-    //     minHeight: 50,
-    //     marginBottom: 10,
-    // },
-    // googleButtonIcon: { // --- Google için devre dışı bırakıldı ---
-    //     width: 18,
-    //     height: 18,
-    //     marginRight: 10,
-    // },
-    // googleButtonText: { // --- Google için devre dışı bırakıldı ---
-    //     color: '#424242', // Koyu Toprak
-    //     fontSize: 18,
-    //     fontWeight: 'bold',
-    // },
-    // --- YENİ Stiller Sonu ---
-    
-    switchTextContainer: { marginTop: 20, },
-    switchText: { 
-        color: '#1E88E5', // Gökyüzü Mavisi
-        fontSize: 15, 
+    buttonText: {
+        color: 'white',
+        fontSize: FONT_SIZES.m,
+        fontWeight: 'bold',
+        letterSpacing: 1,
+    },
+    switchButton: {
+        marginTop: SPACING.l,
+        alignItems: 'center',
+        padding: SPACING.s,
+    },
+    switchText: {
+        color: COLORS.textSecondary,
+        fontSize: FONT_SIZES.s,
+    },
+    switchTextBold: {
+        color: COLORS.primary,
+        fontWeight: 'bold',
     }
 });
 
