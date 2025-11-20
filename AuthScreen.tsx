@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { 
+    View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, 
+    ActivityIndicator, KeyboardAvoidingView, Platform 
+} from 'react-native';
 import {
     getAuth,
     createUserWithEmailAndPassword,
@@ -9,11 +12,16 @@ import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { app } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Linking from 'expo-linking'; // [YENİ] Link açmak için
 import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// [YENİ] Yasal metin linkleri (İleride kendi sitenle değiştir)
+const PRIVACY_POLICY_URL = 'https://gist.githubusercontent.com/lkocakl/b80bf21c5e476093b8074ebe4c9d0c8c/raw/25d63ebf94bef08265702fc5af5e061f871805b2/privacy-policy.md'; 
+const TERMS_OF_USE_URL = 'https://gist.githubusercontent.com/lkocakl/db58de89638b8975bbaf892b166a327f/raw/77b73a903d9b8817b1d92afd27915d696d168fd9/terms-of-use.md';
 
 const AuthScreen = () => {
     const [email, setEmail] = useState('');
@@ -25,6 +33,20 @@ const AuthScreen = () => {
     const isValidEmail = (email: string): boolean => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(email);
+    };
+
+    // [YENİ] Link açma fonksiyonu
+    const handleOpenLink = async (url: string) => {
+        try {
+            const supported = await Linking.canOpenURL(url);
+            if (supported) {
+                await Linking.openURL(url);
+            } else {
+                Alert.alert("Hata", "Bu link açılamıyor: " + url);
+            }
+        } catch (error) {
+            console.error("Link hatası:", error);
+        }
     };
 
     const handleAuthentication = async () => {
@@ -55,7 +77,11 @@ const AuthScreen = () => {
                 await setDoc(userDocRef, {
                     email: user.email,
                     username: user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`,
-                    createdAt: serverTimestamp()
+                    createdAt: serverTimestamp(),
+                    // [YENİ] Başlangıç istatistiklerini sıfırla (Batch hatasını önlemek için)
+                    totalDistance: 0,
+                    totalRoutes: 0,
+                    totalScore: 0
                 });
             }
 
@@ -63,8 +89,8 @@ const AuthScreen = () => {
 
         } catch (error: any) {
             let errorMessage = error.message.replace("Firebase: ", "").replace("Firebase Auth: ", "");
-            if (error.code === 'auth/user-not-found') {
-                errorMessage = "Bu email adresi ile kayıtlı kullanıcı bulunamadı.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+                errorMessage = "Kullanıcı bulunamadı veya şifre yanlış.";
             } else if (error.code === 'auth/wrong-password') {
                 errorMessage = "Şifre yanlış.";
             } else if (error.code === 'auth/email-already-in-use') {
@@ -147,6 +173,23 @@ const AuthScreen = () => {
                             )}
                         </LinearGradient>
                     </TouchableOpacity>
+
+                    {/* [YENİ] Sadece "Kayıt Ol" modunda görünen Yasal Uyarı */}
+                    {!isLogin && (
+                        <View style={styles.legalContainer}>
+                            <Text style={styles.legalText}>
+                                Kayıt olarak,{' '}
+                                <Text style={styles.linkText} onPress={() => handleOpenLink(TERMS_OF_USE_URL)}>
+                                    Kullanım Şartları
+                                </Text>
+                                {'\'nı ve '}
+                                <Text style={styles.linkText} onPress={() => handleOpenLink(PRIVACY_POLICY_URL)}>
+                                    Gizlilik Politikası
+                                </Text>
+                                {'\'nı kabul etmiş olursunuz.'}
+                            </Text>
+                        </View>
+                    )}
 
                     <TouchableOpacity
                         onPress={() => setIsLogin(!isLogin)}
@@ -252,6 +295,23 @@ const styles = StyleSheet.create({
     switchTextBold: {
         color: COLORS.primary,
         fontWeight: 'bold',
+    },
+    // [YENİ] Yasal metin stilleri
+    legalContainer: {
+        marginTop: SPACING.m,
+        alignItems: 'center',
+        paddingHorizontal: SPACING.s,
+    },
+    legalText: {
+        fontSize: 11,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        lineHeight: 16,
+    },
+    linkText: {
+        color: COLORS.primary,
+        fontWeight: 'bold',
+        textDecorationLine: 'underline',
     }
 });
 

@@ -1,168 +1,115 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
-import { collection, query, onSnapshot, DocumentData, QuerySnapshot } from 'firebase/firestore';
+import { StyleSheet, View, Text, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from './firebaseConfig';
-import { useUserMap } from './hooks/useUserMap';
 import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-interface LeaderboardEntry {
+interface UserEntry {
   userId: string;
   username: string;
   totalScore: number;
+  profileImage?: string;
 }
-
-type ScoreMap = { [userId: string]: number; }
-type LeaderboardType = 'competition' | 'allTime';
 
 const LeaderboardScreen = () => {
   const [loading, setLoading] = useState(true);
+  const [leaderboard, setLeaderboard] = useState<UserEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [ownerScores, setOwnerScores] = useState<ScoreMap>({});
-  const [creatorScores, setCreatorScores] = useState<ScoreMap>({});
-  const { userMap, loading: userMapLoading } = useUserMap();
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<LeaderboardType>('competition');
-
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
+  // Aktif sekme mantığını basitleştirdik çünkü artık tek bir puan kaynağımız var (totalScore)
+  // İleride isterseniz "totalDistance" gibi farklı sıralamalar ekleyebilirsiniz.
+  
+  const fetchLeaderboard = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setRefreshing(false);
-      setLoading(false);
-    }, 500);
-  }, []);
-
-  useEffect(() => {
-    const routesCollectionRef = collection(db, "routes");
-    const q = query(routesCollectionRef);
-
-    const unsubscribe = onSnapshot(q, (querySnapshot: QuerySnapshot<DocumentData>) => {
-      const newOwnerScores: ScoreMap = {};
-      const newCreatorScores: ScoreMap = {};
-
+    try {
+      // OPTİMİZASYON: Binlerce rotayı çekmek yerine sadece en yüksek puanlı 50 kullanıcıyı çekiyoruz.
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, orderBy("totalScore", "desc"), limit(50));
+      
+      const querySnapshot = await getDocs(q);
+      const users: UserEntry[] = [];
+      
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        const gaspScore = data['gaspScore'] || 0;
-        const ownerId = data['ownerId'] || data['userId'] || 'Bilinmeyen';
-        newOwnerScores[ownerId] = (newOwnerScores[ownerId] || 0) + gaspScore;
-        const creatorId = data['userId'] || 'Bilinmeyen';
-        newCreatorScores[creatorId] = (newCreatorScores[creatorId] || 0) + gaspScore;
+        users.push({
+          userId: doc.id,
+          username: data.username || 'İsimsiz Fatih',
+          totalScore: data.totalScore || 0,
+          profileImage: data.profileImage
+        });
       });
 
-      setOwnerScores(newOwnerScores);
-      setCreatorScores(newCreatorScores);
+      setLeaderboard(users);
+    } catch (error) {
+      console.error("Liderlik tablosu hatası:", error);
+    } finally {
       setLoading(false);
-    }, (error) => {
-      console.error("Liderlik tablosu verisi çekilirken hata oluştu: ", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const scoresToUse = (activeTab === 'competition') ? ownerScores : creatorScores;
-    const sortedLeaderboard: LeaderboardEntry[] = Object.keys(scoresToUse)
-      .map(userId => ({
-        userId: userId,
-        username: userMap[userId] || (userId === 'Bilinmeyen' ? userId : `...@${userId.substring(userId.length - 6)}`),
-        totalScore: scoresToUse[userId]
-      }))
-      .sort((a, b) => b.totalScore - a.totalScore);
+    fetchLeaderboard();
+  }, []);
 
-    setLeaderboard(sortedLeaderboard);
-  }, [activeTab, ownerScores, creatorScores, userMap]);
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchLeaderboard();
+  };
 
-  const renderItem = ({ item, index }: { item: LeaderboardEntry, index: number }) => {
+  const renderItem = ({ item, index }: { item: UserEntry, index: number }) => {
     const isTop3 = index < 3;
     const rankColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : COLORS.textSecondary;
 
     return (
       <View style={[styles.row, isTop3 && styles.top3Row]}>
         <View style={styles.rankContainer}>
-          {index === 0 ? (
-            <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
-          ) : (
-            <Text style={[styles.rank, { color: rankColor }]}>#{index + 1}</Text>
-          )}
+            {index === 0 ? (
+               <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
+            ) : (
+               <Text style={[styles.rank, { color: rankColor }]}>#{index + 1}</Text>
+            )}
         </View>
-
         <View style={styles.userInfo}>
           <Text style={[styles.username, isTop3 && styles.top3Text]}>{item.username}</Text>
-          <Text style={styles.scoreLabel}>{activeTab === 'competition' ? 'Fethedilen Puan' : 'Toplam Puan'}</Text>
         </View>
-
         <View style={styles.scoreContainer}>
-          <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>
-            {item.totalScore}
-          </Text>
-          <Text style={styles.pts}>PTS</Text>
+          <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>{item.totalScore} PTS</Text>
         </View>
       </View>
     );
   };
 
-  if (loading || userMapLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Sıralama Yükleniyor...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.surface, '#F0F4C3']}
-        style={StyleSheet.absoluteFill}
-      />
-
-      <View style={styles.headerContainer}>
+       <LinearGradient colors={[COLORS.surface, '#F0F4C3']} style={StyleSheet.absoluteFill} />
+       
+       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Liderlik Tablosu</Text>
-        <Text style={styles.headerSubtitle}>Bölgenin En İyileri</Text>
-      </View>
-
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'competition' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('competition')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'competition' && styles.tabTextActive]}>🏆 Bölge Sahipleri</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'allTime' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('allTime')}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'allTime' && styles.tabTextActive]}>⚡ En Aktifler</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={leaderboard}
-        keyExtractor={(item) => item.userId}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="trophy-broken" size={64} color={COLORS.textSecondary} />
-            <Text style={styles.emptyText}>Henüz veri yok</Text>
-          </View>
-        }
-      />
+        <Text style={styles.headerSubtitle}>Bölgenin Fatihleri</Text>
+       </View>
+       
+       {loading ? (
+         <View style={styles.centerContainer}>
+             <ActivityIndicator size="large" color={COLORS.primary} />
+             <Text style={styles.loadingText}>Sıralama Yükleniyor...</Text>
+         </View>
+       ) : (
+         <FlatList
+            data={leaderboard}
+            keyExtractor={(item) => item.userId}
+            renderItem={renderItem}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <MaterialCommunityIcons name="trophy-broken" size={64} color={COLORS.textSecondary} />
+                  <Text style={styles.emptyText}>Henüz veri yok</Text>
+                </View>
+            }
+         />
+       )}
     </View>
   );
 };
@@ -176,7 +123,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: 'transparent',
+    marginTop: 50,
   },
   loadingText: {
     marginTop: SPACING.m,
@@ -205,37 +153,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: SPACING.xs,
   },
-  tabContainer: {
-    flexDirection: 'row',
-    marginHorizontal: SPACING.l,
-    marginTop: SPACING.l,
-    marginBottom: SPACING.m,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 16,
-    padding: 4,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-  },
-  tabButtonActive: {
-    backgroundColor: COLORS.surface,
-    ...SHADOWS.small,
-  },
-  tabText: {
-    fontSize: FONT_SIZES.s,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  tabTextActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
-  },
   listContent: {
     paddingHorizontal: SPACING.m,
+    paddingTop: SPACING.m,
     paddingBottom: SPACING.xl,
   },
   row: {
@@ -273,22 +193,12 @@ const styles = StyleSheet.create({
   top3Text: {
     color: COLORS.primaryDark,
   },
-  scoreLabel: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
   scoreContainer: {
     alignItems: 'flex-end',
   },
   score: {
     fontSize: FONT_SIZES.l,
     fontWeight: '800',
-  },
-  pts: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
   },
   emptyContainer: {
     padding: 40,

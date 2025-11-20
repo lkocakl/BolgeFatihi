@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ActivityIndicator, Alert } from 'react-native';
-import MapView, { Polyline, Marker, Region } from 'react-native-maps';
+import MapView, { Region } from 'react-native-maps';
 import * as turf from '@turf/turf';
 import * as Haptics from 'expo-haptics';
 
 import {
-    collection, addDoc, serverTimestamp, doc, Timestamp,
-    getDoc, updateDoc, GeoPoint
+    collection, doc, serverTimestamp, GeoPoint,
+    getDoc, writeBatch, increment, Timestamp
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
@@ -189,7 +189,12 @@ const MapScreen = () => {
                 }
 
                 try {
-                    const newDocRef = await addDoc(collection(db, "routes"), {
+                    // BATCH WRITES: Atomik işlem başlat
+                    const batch = writeBatch(db);
+
+                    // 1. Yeni Rota Oluştur
+                    const newRouteRef = doc(collection(db, "routes"));
+                    const newRouteData = {
                         userId: userId,
                         ownerId: userId,
                         coords: geoPoints,
@@ -200,29 +205,32 @@ const MapScreen = () => {
                         durationSeconds: durationInSeconds,
                         gaspedRoutes: gaspedRoutes,
                         geohash: routeGeohash
+                    };
+                    batch.set(newRouteRef, newRouteData);
+
+                    // 2. Kullanıcı İstatistiklerini Güncelle
+                    const userRef = doc(db, "users", userId);
+                    batch.update(userRef, {
+                        totalDistance: increment(parseFloat(distanceKm.toFixed(2))),
+                        totalRoutes: increment(1),
+                        totalScore: increment(baseScore)
                     });
 
-                    // Handle Gasped Routes
+                    // 3. Gasp Edilen Rotaları Güncelle
                     if (gaspedRoutes.length > 0) {
                         for (const routeId of gaspedRoutes) {
+                            // Not: Batch içinde okuma yapamayız, basitlik için direkt +5 puan ve sahip değişikliği yapıyoruz.
                             const routeToGaspRef = doc(db, "routes", routeId);
-                            const routeDocSnap = await getDoc(routeToGaspRef);
-                            if (routeDocSnap.exists()) {
-                                const routeData = routeDocSnap.data();
-                                const currentGaspScore = routeData.gaspScore || routeData.baseScore || 10;
-                                const newGaspScore = Math.max(Math.floor(currentGaspScore * 1.2), currentGaspScore + 5);
-
-                                await updateDoc(routeToGaspRef, {
-                                    ownerId: userId,
-                                    claimedAt: serverTimestamp(),
-                                    gaspScore: newGaspScore
-                                });
-
-                                // Optimistic Update
-                                setConqueredRoutes(prev => prev.map(r =>
-                                    r.id === routeId ? { ...r, ownerId: userId, gaspScore: newGaspScore } : r
-                                ));
-                            }
+                            batch.update(routeToGaspRef, {
+                                ownerId: userId,
+                                claimedAt: serverTimestamp(),
+                                gaspScore: increment(5) // Her gasp için bonus
+                            });
+                            
+                            // Gaspçının puanını da artırabiliriz (opsiyonel)
+                            batch.update(userRef, {
+                                totalScore: increment(5)
+                            });
                         }
                         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                         showAlert("Bölge Fethedildi!", `Ek olarak ${gaspedRoutes.length} adet rakip bölgeyi ele geçirdin!`, 'success');
@@ -231,9 +239,12 @@ const MapScreen = () => {
                         showAlert("Bölge Fethedildi!", `Mesafe: ${distanceKm.toFixed(2)} KM\nPuan: ${baseScore}`, 'success');
                     }
 
-                    // Optimistic Add
+                    // Batch işlemini onayla
+                    await batch.commit();
+
+                    // Optimistic Update for UI
                     const newRoute: ConqueredRoute = {
-                        id: newDocRef.id,
+                        id: newRouteRef.id,
                         ownerId: userId,
                         coords: finalCoords,
                         distanceKm: parseFloat(distanceKm.toFixed(2)),
@@ -242,7 +253,16 @@ const MapScreen = () => {
                         durationSeconds: durationInSeconds,
                         geohash: routeGeohash
                     };
-                    setConqueredRoutes(prev => [...prev, newRoute]);
+                    
+                    // Gasp edilenleri de yerel state'te güncelle
+                    setConqueredRoutes(prev => {
+                        const updatedPrev = prev.map(r => 
+                             gaspedRoutes.includes(r.id) 
+                                ? { ...r, ownerId: userId, gaspScore: (r.gaspScore || 0) + 5 } 
+                                : r
+                        );
+                        return [...updatedPrev, newRoute];
+                    });
 
                 } catch (firestoreError) {
                     console.error("Firestore save error, saving offline:", firestoreError);

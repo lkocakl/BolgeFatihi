@@ -2,22 +2,21 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Kullanıcılar koleksiyonu:
-    // - Okuma: Giriş yapmış herkes okuyabilir (Liderlik tablosu için gerekli)
-    // - Yazma: Sadece kendi dokümanını düzenleyebilir
+    // Kullanıcılar: Herkes okuyabilir (Liderlik tablosu için), sadece sahibi yazabilir
     match /users/{userId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Rotalar koleksiyonu:
-    // - Okuma: Giriş yapmış herkes okuyabilir
-    // - Yazma: Giriş yapmış herkes rota ekleyebilir
-    // - Güncelleme: Giriş yapmış herkes (Gasp etme mantığı için gerekli)
+    // Rotalar:
     match /routes/{routeId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
+      
+      // Sadece kendi userId'si ile oluşturabilir ve gelen verinin userId'si auth.uid ile aynı olmalı
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Güncelleme: Ya rotanın sahibidir YA DA gasp puanını güncelliyordur (bunu daha da sıkılaştırabiliriz)
+      allow update: if request.auth != null; 
     }
   }
 }
