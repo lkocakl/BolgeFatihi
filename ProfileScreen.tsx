@@ -145,16 +145,23 @@ const ProfileScreen = () => {
 
             const response = await fetch(uri);
             if (!response.ok) {
-                throw new Error("Fotoğraf verisi okunamadı.");
+                throw new Error(`Fotoğraf verisi okunamadı. HTTP Hata Kodu: ${response.status}`);
             }
             const blob = await response.blob();
 
-            const filename = `profile_${user.uid}_${Date.now()}.jpg`;
-            const storageRef = ref(storage, `profile_images/${filename}`);
+            // --- DÜZELTME BAŞLANGIÇ: Güvenli Storage Yolu ve MIME Type Ayarları ---
+            // MIME type'ı kontrol ederek dosya uzantısını belirle
+            const mimeType = blob.type || 'image/jpeg';
+            const fileExtension = mimeType.split('/').pop() === 'png' ? 'png' : 'jpg';
+            const filename = `${Date.now()}.${fileExtension}`;
+
+            // Storage yolunu kullanıcı UID'si ile alt klasörlendiriyoruz (Güvenlik Kuralı uyumu ve düzen için)
+            const storageRef = ref(storage, `profile_images/${user.uid}/${filename}`);
 
             await uploadBytes(storageRef, blob, {
-                contentType: blob.type || 'image/jpeg',
+                contentType: mimeType, // Blob'dan gelen MIME type'ı kullan
             });
+            // --- DÜZELTME SONU ---
 
             const downloadURL = await getDownloadURL(storageRef);
             console.log("Download URL:", downloadURL);
@@ -167,8 +174,14 @@ const ProfileScreen = () => {
             setProfileImage(downloadURL);
             Alert.alert("Başarılı", "Profil fotoğrafı güncellendi!");
         } catch (error: any) {
+            let errorMessage = "Fotoğraf yüklenirken bir sorun oluştu. Lütfen güvenlik kurallarınızı kontrol edin.";
+            if (error.code && error.code.startsWith('storage/')) {
+                errorMessage = `Depolama Hatası (${error.code}): Sunucu tarafındaki güvenlik kurallarınızı ve dosya yolunu kontrol edin.`;
+            } else if (error.message) {
+                errorMessage = `Hata: ${error.message}. Güvenlik kurallarınızı kontrol edin.`;
+            }
             console.error("General upload error:", error);
-            Alert.alert("Hata", "Fotoğraf yüklenirken bir sorun oluştu: " + (error?.message || "Bilinmeyen hata"));
+            Alert.alert("Hata", errorMessage);
         } finally {
             setUploading(false);
         }
