@@ -12,14 +12,16 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 export const usePushNotifications = (user: any) => {
   const [expoPushToken, setExpoPushToken] = useState<string | undefined>('');
   const [notification, setNotification] = useState<Notifications.Notification | boolean>(false);
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notificationListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.Subscription>();
 
   // Token alma ve izin isteme fonksiyonu
   async function registerForPushNotificationsAsync() {
@@ -37,12 +39,12 @@ export const usePushNotifications = (user: any) => {
     if (Device.isDevice) {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
-      
+
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
-      
+
       if (finalStatus !== 'granted') {
         console.log('Bildirim izni alınamadı!');
         return;
@@ -53,14 +55,14 @@ export const usePushNotifications = (user: any) => {
       try {
         const projectId = Constants.default.expoConfig?.extra?.eas?.projectId ?? Constants.default.easConfig?.projectId;
         if (!projectId) {
-            console.log("Project ID bulunamadı, token alınamıyor.");
-             // Geliştirme ortamında (Expo Go) projectId olmadan da çalışabilir ama build alınca gerekir.
+          console.log("Project ID bulunamadı, token alınamıyor.");
+          // Geliştirme ortamında (Expo Go) projectId olmadan da çalışabilir ama build alınca gerekir.
         }
-        
+
         token = (await Notifications.getExpoPushTokenAsync({
           projectId,
         })).data;
-        
+
         console.log("Expo Push Token:", token);
       } catch (e) {
         console.error("Token alma hatası:", e);
@@ -92,20 +94,21 @@ export const usePushNotifications = (user: any) => {
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log("Bildirime tıklandı:", response);
-      // Burada bildirime tıklanınca yapılacak navigasyon işlemleri eklenebilir
+      console.log(response);
     });
 
     return () => {
-      if(notificationListener.current) 
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      if(responseListener.current)
-        Notifications.removeNotificationSubscription(responseListener.current);
+      if (notificationListener.current) {
+        notificationListener.current.remove();
+      }
+      if (responseListener.current) {
+        responseListener.current.remove();
+      }
     };
-  }, [user]); // User değiştiğinde (giriş yaptığında) tekrar çalışsın
+  }, [user]);
 
   return {
     expoPushToken,
-    notification
+    notification,
   };
 };
