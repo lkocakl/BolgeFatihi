@@ -5,7 +5,6 @@ export interface Coordinate {
   longitude: number;
 }
 // Haversine formülü: İki koordinat arasındaki mesafeyi (km cinsinden) hesaplar.
-// Dünya'nın ortalama yarıçapı: 6371 km
 const EARTH_RADIUS_KM = 6371;
 
 // Dereceyi radyana çeviren yardımcı fonksiyon
@@ -15,32 +14,25 @@ const toRad = (value: number): number => {
 
 /**
  * İki GPS koordinatı arasındaki mesafeyi Haversine formülü ile hesaplar.
- * @param lat1 Birinci noktanın enlemi (latitude)
- * @param lon1 Birinci noktanın boylamı (longitude)
- * @param lat2 İkinci noktanın enlemi (latitude)
- * @param lon2 İkinci noktanın boylamı (longitude)
- * @returns İki nokta arasındaki mesafe (kilometre cinsinden).
  */
 export const calculateDistance = (
-  lat1: number, 
-  lon1: number, 
-  lat2: number, 
+  lat1: number,
+  lon1: number,
+  lat2: number,
   lon2: number
 ): number => {
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a = 
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = EARTH_RADIUS_KM * c; 
+  const distance = EARTH_RADIUS_KM * c;
   return distance; // Km cinsinden
 };
 
 /**
  * Bir rota üzerindeki toplam mesafeyi hesaplar.
- * @param coordinates LocationCoordinates dizisi
- * @returns Rotanın toplam uzunluğu (kilometre cinsinden).
  */
 export const calculateRouteDistance = (coordinates: { latitude: number; longitude: number; }[]): number => {
   if (coordinates.length < 2) {
@@ -64,7 +56,37 @@ export const calculateRouteDistance = (coordinates: { latitude: number; longitud
   return totalDistance;
 };
 
-// --- DÜZELTME ---
-// 'createRouteBuffer' ve 'checkSimplifiedIntersection' fonksiyonları kaldırıldı.
-// Bu fonksiyonlar artık kullanılmıyordu, MapScreen.tsx doğrudan Turf.js kullanıyor.
-// --- DÜZELTME SONU ---
+// --- [YENİ] PUSH BİLDİRİM GÖNDERME YARDIMCISI ---
+/**
+ * Belirtilen Expo Push Token'a bildirim gönderir.
+ * @param expoPushToken Alıcının push token'ı
+ * @param title Bildirim başlığı
+ * @param body Bildirim içeriği
+ * @param data (Opsiyonel) Bildirimle gidecek ekstra veri
+ */
+export const sendPushNotification = async (expoPushToken: string, title: string, body: string, data: any = {}) => {
+  const message = {
+    to: expoPushToken,
+    sound: 'default',
+    title: title,
+    body: body,
+    data: data,
+  };
+
+  try {
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+
+    const result = await response.json();
+    console.log("Bildirim gönderildi:", result);
+  } catch (error) {
+    console.error("Bildirim gönderme hatası:", error);
+  }
+};

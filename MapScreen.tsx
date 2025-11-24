@@ -4,6 +4,7 @@ import MapView, { Region } from 'react-native-maps';
 import * as turf from '@turf/turf';
 import * as Haptics from 'expo-haptics';
 
+// [GÜNCELLENDİ] getDoc importu eklendi
 import {
     collection, doc, serverTimestamp, GeoPoint,
     getDoc, writeBatch, increment, Timestamp
@@ -13,7 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from './AuthContext';
 import { geohashForLocation } from 'geofire-common';
 
-import { calculateRouteDistance, Coordinate } from './utils';
+// [GÜNCELLENDİ] sendPushNotification eklendi
+import { calculateRouteDistance, Coordinate, sendPushNotification } from './utils';
 import { useRouteTracker } from './hooks/useRouteTracker';
 import { useRouteFetcher, ConqueredRoute } from './hooks/useRouteFetcher';
 import { useUserMap } from './hooks/useUserMap';
@@ -216,18 +218,51 @@ const MapScreen = () => {
                         totalScore: increment(baseScore)
                     });
 
-                    // 3. Gasp Edilen Rotaları Güncelle
+                    // 3. Gasp Edilen Rotaları Güncelle VE BİLDİRİM GÖNDER [GÜNCELLENDİ]
                     if (gaspedRoutes.length > 0) {
                         for (const routeId of gaspedRoutes) {
-                            // Not: Batch içinde okuma yapamayız, basitlik için direkt +5 puan ve sahip değişikliği yapıyoruz.
                             const routeToGaspRef = doc(db, "routes", routeId);
+
+                            // A. Bildirim Gönderimi (Batch'ten bağımsız)
+                            try {
+                                const routeSnap = await getDoc(routeToGaspRef);
+                                if (routeSnap.exists()) {
+                                    const routeData = routeSnap.data();
+                                    const victimId = routeData.ownerId;
+
+                                    // Eğer gasp eden kişi zaten kendisi değilse bildirim at
+                                    if (victimId && victimId !== userId) {
+                                        // Mağdurun Push Token'ını al
+                                        const victimUserRef = doc(db, "users", victimId);
+                                        const victimSnap = await getDoc(victimUserRef);
+
+                                        if (victimSnap.exists()) {
+                                            const victimData = victimSnap.data();
+                                            const victimToken = victimData.expoPushToken;
+
+                                            if (victimToken) {
+                                                // 🔥 BİLDİRİMİ GÖNDER!
+                                                await sendPushNotification(
+                                                    victimToken,
+                                                    "⚔️ Bölgen Gasp Edildi!",
+                                                    "Biri koşu rotanı ele geçirdi! Geri almak için hemen koşuya çık."
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (err) {
+                                console.error("Gasp bildirimi gönderilirken hata:", err);
+                            }
+
+                            // B. Batch Güncellemesi
                             batch.update(routeToGaspRef, {
                                 ownerId: userId,
                                 claimedAt: serverTimestamp(),
                                 gaspScore: increment(5) // Her gasp için bonus
                             });
-                            
-                            // Gaspçının puanını da artırabiliriz (opsiyonel)
+
+                            // Gaspçının puanını da artırabiliriz
                             batch.update(userRef, {
                                 totalScore: increment(5)
                             });
@@ -253,12 +288,12 @@ const MapScreen = () => {
                         durationSeconds: durationInSeconds,
                         geohash: routeGeohash
                     };
-                    
+
                     // Gasp edilenleri de yerel state'te güncelle
                     setConqueredRoutes(prev => {
-                        const updatedPrev = prev.map(r => 
-                             gaspedRoutes.includes(r.id) 
-                                ? { ...r, ownerId: userId, gaspScore: (r.gaspScore || 0) + 5 } 
+                        const updatedPrev = prev.map(r =>
+                            gaspedRoutes.includes(r.id)
+                                ? { ...r, ownerId: userId, gaspScore: (r.gaspScore || 0) + 5 }
                                 : r
                         );
                         return [...updatedPrev, newRoute];

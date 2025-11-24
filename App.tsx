@@ -3,33 +3,38 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack'; // YENİ
-import { Ionicons } from '@expo/vector-icons'; 
+import { createStackNavigator } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
 
-// YENİ: AuthProvider ve useAuth
 import { AuthProvider, useAuth } from './AuthContext';
-import ErrorBoundary from './ErrorBoundary'; 
+import ErrorBoundary from './ErrorBoundary';
 
 // Ana ekranlar
-import MapScreen from './MapScreen'; 
+import MapScreen from './MapScreen';
 import LeaderboardScreen from './LeaderboardScreen';
 import ProfileScreen from './ProfileScreen';
 import AuthScreen from './AuthScreen';
 
+// Push Notification Hook'u [EKLENDİ]
+import { usePushNotifications } from './hooks/usePushNotifications';
+
 const Tab = createBottomTabNavigator();
-const RootStack = createStackNavigator(); // YENİ
+const RootStack = createStackNavigator();
 
 // Ana uygulama (Tab Navigator)
 const MainAppTabs = () => {
   // Kullanıcı durumunu Context'ten al
   const { user } = useAuth();
 
+  // Push Bildirim Sistemini Başlat [EKLENDİ]
+  usePushNotifications(user);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          
+
           if (route.name === 'Harita') {
             iconName = focused ? 'map' : 'map-outline';
           } else if (route.name === 'Liderler') {
@@ -39,20 +44,17 @@ const MainAppTabs = () => {
           }
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
-        // --- DEĞİŞİKLİK ---
         tabBarActiveTintColor: '#388E3C', // Sağlık Yeşili
-        // --- DEĞİŞİKLİK SONU ---
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
       })}
     >
       <Tab.Screen name="Harita" component={MapScreen} />
-      <Tab.Screen name="Liderler" component={LeaderboardScreen} /> 
-      
-      {/* KRİTİK DEĞİŞİKLİK: Profil sekmesine "listener" (dinleyici) ekle */}
-      <Tab.Screen 
-        name="Profil" 
-        component={ProfileScreen} 
+      <Tab.Screen name="Liderler" component={LeaderboardScreen} />
+
+      <Tab.Screen
+        name="Profil"
+        component={ProfileScreen}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             // Eğer kullanıcı giriş yapmamışsa...
@@ -70,20 +72,19 @@ const MainAppTabs = () => {
   );
 };
 
-// YENİ: Ana Stack Navigator
-// Uygulamanın tamamını (sekmeler) ve modalı (giriş) yönetir
+// Ana Stack Navigator
 const AppNavigator = () => {
   return (
     <RootStack.Navigator>
-      <RootStack.Screen 
+      <RootStack.Screen
         name="AppTabs" // Ana uygulama (Sekmeler)
         component={MainAppTabs}
-        options={{ headerShown: false }} 
+        options={{ headerShown: false }}
       />
-      <RootStack.Screen 
+      <RootStack.Screen
         name="AuthModal" // Giriş ekranı (Modal)
         component={AuthScreen}
-        options={{ 
+        options={{
           presentation: 'modal', // Bu, ekranın alttan kayarak açılmasını sağlar
           headerTitle: 'Giriş Yap veya Kaydol'
         }}
@@ -94,11 +95,8 @@ const AppNavigator = () => {
 
 // Ana App bileşeni
 const App = () => {
-  // App.tsx'teki tüm state ve useEffect'ler kaldırıldı (AuthContext'e taşındı)
-  
   return (
     <ErrorBoundary>
-      {/* AuthProvider tüm uygulamayı sarmalar */}
       <AuthProvider>
         <NavigationContainer>
           <AppNavigator />
