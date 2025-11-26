@@ -160,3 +160,5 @@ Expo Go'da background location çalışmaz çünkü native modüller gereklidir.
 - Expo Go'da: 'r' tuşuna basarak reload edin
 
 
+
+

@@ -22,8 +22,9 @@
         ]
       }
     },
-    
     "android": {
+      "package": "com.kocak.BolgeFatihi",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -31,11 +32,17 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION"
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAAj2g-xgDuBgey16BS9jpsCa-mOA_JEpo"
+        }
+      },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.kocak.BolgeFatihi"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,13 +55,14 @@
           "color": "#ffffff"
         }
       ],
-      "expo-web-browser",
       [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Uygulama arka plandayken de koşu rotanızı takip etmek için konumunuza her zaman ihtiyaç var."
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-font"
     ],
     "extra": {
       "eas": {

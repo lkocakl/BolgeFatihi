@@ -8,6 +8,8 @@ import {
     doc, setDoc, onSnapshot, deleteDoc
 } from 'firebase/firestore';
 import { sendPasswordResetEmail, signOut, deleteUser } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
+// [DÜZELTME 1] uploadString yerine uploadBytes kullanıyoruz
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { db, auth, storage } from './firebaseConfig';
@@ -16,6 +18,23 @@ import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Badge from './components/Badge';
+
+// [YARDIMCI FONKSİYON] Dosya yolunu Blob formatına çevirir
+const getBlobFromUri = async (uri: string): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+        resolve(xhr.response);
+      };
+      xhr.onerror = function (e) {
+        console.log(e);
+        reject(new TypeError("Network request failed"));
+      };
+      xhr.responseType = "blob";
+      xhr.open("GET", uri, true);
+      xhr.send(null);
+    });
+  };
 
 const ProfileScreen = () => {
     const { user, userProfile } = useAuth();
@@ -42,7 +61,6 @@ const ProfileScreen = () => {
     const fetchUserStats = () => {
         if (!user) return;
 
-        // OPTİMİZASYON: Doğrudan user dokümanındaki istatistikleri dinliyoruz
         const userDocRef = doc(db, "users", user.uid);
         const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -97,6 +115,7 @@ const ProfileScreen = () => {
             quality: 0.5,
         });
         if (!result.canceled) {
+            // [DÜZELTME 2] Sadece URI (dosya yolu) gönderiyoruz
             handleImageUpload(result.assets[0].uri);
         }
     };
@@ -113,32 +132,52 @@ const ProfileScreen = () => {
             quality: 0.5,
         });
         if (!result.canceled) {
+            // [DÜZELTME 2] Sadece URI (dosya yolu) gönderiyoruz
             handleImageUpload(result.assets[0].uri);
         }
     };
 
+    // [DÜZELTME 3] Parametre tipini string yaptık ve getBlobFromUri + uploadBytes yapısına geçtik
     const handleImageUpload = async (uri: string) => {
         if (!user) return;
         setUploading(true);
         try {
-            const response = await fetch(uri);
-            const blob = await response.blob();
-            const mimeType = blob.type || 'image/jpeg';
-            const fileExtension = mimeType.split('/').pop() === 'png' ? 'png' : 'jpg';
+            // 1. URI'den Blob oluştur (XMLHttpRequest kullanarak)
+            const blob = await getBlobFromUri(uri);
+
+            // 2. Dosya adı ve türünü belirle
+            const fileExtension = uri.split('.').pop()?.toLowerCase() === 'png' ? 'png' : 'jpg';
+            const mimeType = fileExtension === 'png' ? 'image/png' : 'image/jpeg';
             const filename = `${Date.now()}.${fileExtension}`;
+            
+            // 3. Referans oluştur
             const storageRef = ref(storage, `profile_images/${user.uid}/${filename}`);
 
+            // 4. Yükleme yap (uploadBytes)
             await uploadBytes(storageRef, blob, { contentType: mimeType });
+            
+            // 5. URL al
             const downloadURL = await getDownloadURL(storageRef);
 
+            // 6. Firestore güncelle
             const userRef = doc(db, "users", user.uid);
             await setDoc(userRef, { profileImage: downloadURL }, { merge: true });
 
             setProfileImage(downloadURL);
+            
+            // 7. Bellek sızıntısını önlemek için blob'u kapat
+            // @ts-ignore: Blob tipinde close metodu React Native ortamında vardır
+            blob.close && blob.close();
+
             Alert.alert("Başarılı", "Profil fotoğrafı güncellendi!");
         } catch (error: any) {
-            console.error("Upload error:", error);
-            Alert.alert("Hata", "Fotoğraf yüklenirken bir sorun oluştu.");
+            if (error instanceof FirebaseError) {
+                console.error("Upload error code:", error.code, error.message);
+                Alert.alert("Hata", `Fotoğraf yüklenemedi: ${error.code}`);
+            } else {
+                console.error("Upload error:", error);
+                Alert.alert("Hata", "Fotoğraf yüklenirken bir sorun oluştu: " + error.message);
+            }
         } finally {
             setUploading(false);
         }
@@ -193,7 +232,6 @@ const ProfileScreen = () => {
         }
     };
 
-    // --- HESAP SİLME FONKSİYONU (YENİ) ---
     const handleDeleteAccount = () => {
         Alert.alert(
             "Hesabı Sil",
@@ -207,16 +245,10 @@ const ProfileScreen = () => {
                         if (!user) return;
                         setLoading(true);
                         try {
-                            // 1. Firestore'daki kullanıcı verisini sil
                             await deleteDoc(doc(db, "users", user.uid));
-                            
-                            // 2. Firebase Auth kullanıcısını sil
                             await deleteUser(user);
-                            
-                            // Not: AuthContext otomatik olarak çıkışa yönlendirecektir.
                         } catch (error: any) {
                             console.error("Delete account error:", error);
-                            // Güvenlik gereği, kullanıcı uzun süredir giriş yapmadıysa tekrar giriş yapmasını isteyebilir
                             if (error.code === 'auth/requires-recent-login') {
                                 Alert.alert("Güvenlik Uyarısı", "Hesabınızı silmek için lütfen çıkış yapıp tekrar giriş yapın.");
                             } else {
@@ -302,7 +334,6 @@ const ProfileScreen = () => {
                     <Text style={styles.logoutText}>Çıkış Yap</Text>
                 </TouchableOpacity>
 
-                {/* HESAP SİLME BUTONU (YENİ) */}
                 <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
                     <MaterialCommunityIcons name="delete-forever" size={20} color="#D32F2F" />
                     <Text style={styles.deleteAccountText}>Hesabımı Sil</Text>
@@ -343,8 +374,6 @@ const styles = StyleSheet.create({
     resetButtonText: { color: COLORS.textSecondary, marginLeft: SPACING.s, fontSize: FONT_SIZES.s },
     logoutButton: { marginHorizontal: SPACING.l, padding: SPACING.m, alignItems: 'center', borderWidth: 1, borderColor: COLORS.error, borderRadius: 12, marginBottom: SPACING.m },
     logoutText: { color: COLORS.error, fontWeight: 'bold', fontSize: FONT_SIZES.m },
-    
-    // YENİ STİLLER
     deleteAccountButton: { 
         marginHorizontal: SPACING.l, 
         padding: SPACING.s, 
@@ -360,7 +389,6 @@ const styles = StyleSheet.create({
         marginLeft: 5,
         fontWeight: '600' 
     },
-
     versionText: { textAlign: 'center', color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, opacity: 0.5 },
     infoText: { fontSize: FONT_SIZES.m, color: COLORS.textSecondary }
 });

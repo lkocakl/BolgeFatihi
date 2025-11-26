@@ -167,3 +167,5 @@ Sorularınız veya önerileriniz için issue açabilirsiniz.
 **Not**: Bu uygulamayı kullanmak için aktif bir internet bağlantısı ve konum izni gereklidir.
 
 
+
+

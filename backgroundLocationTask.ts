@@ -13,7 +13,7 @@ const ROUTE_COORDS_KEY = '@background_route_coords';
 const TRACKING_START_TIME_KEY = '@tracking_start_time';
 
 // Background location task'ı tanımla
-TaskManager.defineTask(BACKGROUND_LOCATION_TASK, ({ data, error }) => {
+TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
     console.error('Background location task error:', error);
     return;
@@ -23,7 +23,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, ({ data, error }) => {
     const { locations } = data as any;
     
     // Her yeni konum için
-    locations.forEach(async (location: Location.LocationObject) => {
+    const persistLocation = async (location: Location.LocationObject) => {
       const coord = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -48,7 +48,12 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, ({ data, error }) => {
       } catch (error) {
         console.error('Error saving background location:', error);
       }
-    });
+    };
+
+    // Ensure promise chain resolves sequentially for predictable storage writes
+    for (const location of locations as Location.LocationObject[]) {
+      await persistLocation(location);
+    }
   }
 });
 
@@ -140,5 +145,6 @@ export const getTrackingStartTime = async (): Promise<number | null> => {
     return null;
   }
 };
+
 
 
