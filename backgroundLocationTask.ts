@@ -4,6 +4,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { calculateRouteDistance } from './utils'; // Mesafe hesaplama fonksiyonu
 
 // Task adı - Bu sabit olmalı
 export const BACKGROUND_LOCATION_TASK = 'background-location-task';
@@ -11,6 +12,21 @@ export const BACKGROUND_LOCATION_TASK = 'background-location-task';
 // Koordinatları saklamak için AsyncStorage key
 const ROUTE_COORDS_KEY = '@background_route_coords';
 const TRACKING_START_TIME_KEY = '@tracking_start_time';
+
+// Süreyi formatlamak için yardımcı fonksiyon
+const formatDuration = (ms: number): string => {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  
+  if (hours > 0) {
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${pad(minutes)}:${pad(seconds)}`;
+};
 
 // Background location task'ı tanımla
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
@@ -21,38 +37,61 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 
   if (data) {
     const { locations } = data as any;
-    
-    // Her yeni konum için
-    const persistLocation = async (location: Location.LocationObject) => {
-      const coord = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        timestamp: Date.now(),
-      };
 
-      try {
-        // Mevcut koordinatları al
+    try {
+        // 1. Başlangıç zamanını ve mevcut süreyi hesapla
+        const startTimeStr = await AsyncStorage.getItem(TRACKING_START_TIME_KEY);
+        const startTime = startTimeStr ? parseInt(startTimeStr, 10) : Date.now();
+        const durationMs = Date.now() - startTime;
+
+        // 2. Mevcut koordinatları al
         const existingCoordsJson = await AsyncStorage.getItem(ROUTE_COORDS_KEY);
-        const existingCoords = existingCoordsJson 
-          ? JSON.parse(existingCoordsJson) 
-          : [];
+        let allCoords = existingCoordsJson ? JSON.parse(existingCoordsJson) : [];
 
-        // Yeni koordinatı ekle
-        const updatedCoords = [...existingCoords, coord];
+        // 3. Yeni gelen konumları listeye ekle
+        const newPoints = (locations as Location.LocationObject[]).map(loc => ({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            // timestamp: loc.timestamp 
+        }));
 
-        // AsyncStorage'a kaydet (son 1000 koordinatı tut)
-        const coordsToSave = updatedCoords.slice(-1000);
+        allCoords = [...allCoords, ...newPoints];
+
+        // 4. Veriyi AsyncStorage'a kaydet (Son 10.000 nokta ile sınırladık)
+        const coordsToSave = allCoords.slice(-10000); 
         await AsyncStorage.setItem(ROUTE_COORDS_KEY, JSON.stringify(coordsToSave));
 
-        console.log(`Background location saved: ${coord.latitude}, ${coord.longitude}`);
-      } catch (error) {
-        console.error('Error saving background location:', error);
-      }
-    };
+        // 5. Mesafeyi ve Süreyi Hesapla
+        const distanceKm = calculateRouteDistance(allCoords);
+        const distanceStr = distanceKm.toFixed(2); 
+        const durationStr = formatDuration(durationMs);
 
-    // Ensure promise chain resolves sequentially for predictable storage writes
-    for (const location of locations as Location.LocationObject[]) {
-      await persistLocation(location);
+        // 6. Bildirimi GÜNCELLE (HATA DÜZELTME BURASI) 🔥
+        // Android 12+ kısıtlaması nedeniyle arka planda servis güncellemesi hata verebilir.
+        // Bu hatayı yakalayıp yutuyoruz ki tracking durmasın.
+        try {
+            await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+                accuracy: Location.Accuracy.BestForNavigation,
+                timeInterval: 5000, // 5 saniye
+                distanceInterval: 5, // 5 metre
+                foregroundService: {
+                    notificationTitle: 'Koşu Devam Ediyor 🏃',
+                    notificationBody: `${distanceStr} km • ${durationStr}`,
+                    notificationColor: '#388E3C',
+                },
+                pausesUpdatesAutomatically: false,
+                showsBackgroundLocationIndicator: true,
+            });
+        } catch (notifyError) {
+            // Arka planda bildirim güncellenemedi, sorun değil.
+            // Konum takibi çalışmaya devam eder.
+            // console.log("Bildirim güncellemesi kısıtlamaya takıldı (Normal)");
+        }
+
+        console.log(`BG Update: ${distanceStr}km - ${durationStr}`);
+
+    } catch (err) {
+        console.error("Background task error:", err);
     }
   }
 });
@@ -60,7 +99,6 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 // Background tracking başlat
 export const startBackgroundTracking = async (): Promise<boolean> => {
   try {
-    // Background location izni kontrol et
     const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
     if (foregroundStatus !== 'granted') {
       console.error('Foreground location permission not granted');
@@ -73,17 +111,16 @@ export const startBackgroundTracking = async (): Promise<boolean> => {
       return false;
     }
 
-    // Tracking başlangıç zamanını kaydet
     await AsyncStorage.setItem(TRACKING_START_TIME_KEY, Date.now().toString());
 
-    // Background location tracking başlat
+    // İlk başlatma (Foreground'da olduğu için burada try-catch gerekmez)
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 5000, // 5 saniyede bir
-      distanceInterval: 10, // 10 metrede bir
+      timeInterval: 5000,
+      distanceInterval: 5,
       foregroundService: {
-        notificationTitle: 'Bölge Fatihi',
-        notificationBody: 'Koşu rotanız takip ediliyor...',
+        notificationTitle: 'Koşu Başlatılıyor...',
+        notificationBody: 'Hazırlanıyor...',
         notificationColor: '#388E3C',
       },
       pausesUpdatesAutomatically: false,
@@ -145,6 +182,3 @@ export const getTrackingStartTime = async (): Promise<number | null> => {
     return null;
   }
 };
-
-
-

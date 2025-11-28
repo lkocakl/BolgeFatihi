@@ -20,8 +20,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // [YENİ] Yasal metin linkleri (İleride kendi sitenle değiştir)
-const PRIVACY_POLICY_URL = 'https://gist.githubusercontent.com/lkocakl/b80bf21c5e476093b8074ebe4c9d0c8c/raw/25d63ebf94bef08265702fc5af5e061f871805b2/privacy-policy.md'; 
-const TERMS_OF_USE_URL = 'https://gist.githubusercontent.com/lkocakl/db58de89638b8975bbaf892b166a327f/raw/77b73a903d9b8817b1d92afd27915d696d168fd9/terms-of-use.md';
+const PRIVACY_POLICY_URL = 'https://hammerhead-stocking-1fe.notion.site/2b7174221fab80378cc7c71ddf4cfe92?source=copy_link'; 
+const TERMS_OF_USE_URL = 'https://hammerhead-stocking-1fe.notion.site/2b7174221fab80a781b2d6041b9cb87c?source=copy_link';
 
 const AuthScreen = () => {
     const [email, setEmail] = useState('');

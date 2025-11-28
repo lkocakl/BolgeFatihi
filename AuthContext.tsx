@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
@@ -8,56 +8,87 @@ interface UserProfile {
   username?: string;
   email?: string;
   profileImage?: string;
-  // Add other profile fields as needed
+  totalScore: number;
+  expoPushToken?: string;
+  inventory?: {
+      colors?: string[];
+      activeColor?: string;
+      activePotion?: string | null;
+      shields?: number;
+  };
 }
 
 interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  friendRequestsCount: number;
 }
 
-// 1. Context'i oluştur
-const AuthContext = createContext<AuthContextType>({ user: null, userProfile: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ 
+    user: null, 
+    userProfile: null, 
+    loading: true,
+    friendRequestsCount: 0 
+});
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
-// 2. Provider'ı (Sağlayıcı) oluştur
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true); // Başlangıçta yükleniyor
+  const [loading, setLoading] = useState(true);
+  const [friendRequestsCount, setFriendRequestsCount] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeFirestore: (() => void) | null = null;
+    let unsubscribeRequests: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
 
+      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (unsubscribeRequests) unsubscribeRequests();
+
       if (currentUser) {
-        try {
-          const userDocRef = doc(db, "users", currentUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            setUserProfile(userDocSnap.data() as UserProfile);
+        // 1. Profil Dinleyicisi
+        const userDocRef = doc(db, "users", currentUser.uid);
+        unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserProfile(docSnap.data() as UserProfile);
           } else {
             setUserProfile(null);
           }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setUserProfile(null);
-        }
+          setLoading(false);
+        });
+
+        // 2. Arkadaşlık İstekleri Sayısını Dinle
+        const requestsQuery = query(
+            collection(db, "friend_requests"), 
+            where("toId", "==", currentUser.uid), 
+            where("status", "==", "pending")
+        );
+
+        unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
+            setFriendRequestsCount(snapshot.size);
+        });
+
       } else {
         setUserProfile(null);
+        setFriendRequestsCount(0);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (unsubscribeRequests) unsubscribeRequests();
+    };
   }, []);
 
-  // Oturum durumu kontrol edilirken yükleme ekranı göster
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -66,26 +97,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     );
   }
 
-  // Yükleme bittiyse ve kullanıcı durumu belliyse (null veya dolu),
-  // uygulamayı (children) AuthContext.Provider ile sarmala
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading }}>
+    <AuthContext.Provider value={{ user, userProfile, loading, friendRequestsCount }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// 3. Kolay erişim için bir "hook" oluştur
 export const useAuth = () => {
   return useContext(AuthContext);
 };
 
-// Yükleme stili (YENİ RENKLER)
 const styles = StyleSheet.create({
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F4F4F1' // Açık Toprak Rengi
+    backgroundColor: '#F4F4F1'
   }
 });

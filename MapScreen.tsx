@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import * as turf from '@turf/turf';
 import * as Haptics from 'expo-haptics';
+import { MaterialCommunityIcons } from '@expo/vector-icons'; // İkon için
 
-// [GÜNCELLENDİ] getDoc importu eklendi
 import {
     collection, doc, serverTimestamp, GeoPoint,
-    getDoc, writeBatch, increment, Timestamp
+    getDoc, writeBatch, increment, Timestamp, onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from './AuthContext';
 import { geohashForLocation } from 'geofire-common';
 
-// [GÜNCELLENDİ] sendPushNotification eklendi
+import LocationPermissionModal from './components/LocationPermissionModal';
+import * as Location from 'expo-location';
 import { calculateRouteDistance, Coordinate, sendPushNotification } from './utils';
 import { useRouteTracker } from './hooks/useRouteTracker';
 import { useRouteFetcher, ConqueredRoute } from './hooks/useRouteFetcher';
@@ -23,6 +24,7 @@ import { useOfflineRoutes } from './hooks/useOfflineRoutes';
 import MapOverlay from './components/MapOverlay';
 import TrackingControls from './components/TrackingControls';
 import CustomAlert from './components/CustomAlert';
+import { COLORS, SHADOWS } from './constants/theme';
 
 // --- TURF.JS TABANLI GASP KONTROLÜ ---
 const BUFFER_METERS = 10;
@@ -44,7 +46,6 @@ const checkTurfIntersection = (newRouteCoords: Coordinate[], oldRouteCoords: Coo
         const oldRouteBuffer = turf.buffer(oldRouteLine, BUFFER_METERS, { units: 'meters' });
 
         if (!newRouteBuffer || !oldRouteBuffer) {
-            console.log("Turf buffer oluşturulamadı.");
             return false;
         }
 
@@ -85,9 +86,12 @@ const getRouteMidpoint = (coords: Coordinate[]): Coordinate => {
 }
 
 const MapScreen = () => {
-    const { user } = useAuth();
+    const { user, userProfile } = useAuth();
     const navigation = useNavigation();
     const userId = user?.uid || "";
+    
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [activeColor, setActiveColor] = useState('#1E88E5');
 
     // Custom Hooks
     const {
@@ -112,12 +116,10 @@ const MapScreen = () => {
     const { userMap } = useUserMap();
     const { saveRouteOffline, syncRoutes } = useOfflineRoutes();
 
-    // Local State
     const [visibleRoutes, setVisibleRoutes] = useState<ConqueredRoute[]>([]);
     const [isSaving, setIsSaving] = useState<boolean>(false);
     const [selectedRoute, setSelectedRoute] = useState<ConqueredRoute | null>(null);
 
-    // Alert State
     const [alertVisible, setAlertVisible] = useState(false);
     const [alertConfig, setAlertConfig] = useState<{ title: string, message: string, type: 'success' | 'error' | 'warning' }>({
         title: '',
@@ -128,12 +130,24 @@ const MapScreen = () => {
     const currentRegionRef = useRef<Region | null>(null);
     const MIN_DISTANCE_KM = 0.1;
 
-    // Sync offline routes on mount
     useEffect(() => {
         syncRoutes();
     }, []);
 
-    // Handle Region Change
+    useEffect(() => {
+        if (!userId) return;
+        const userDocRef = doc(db, "users", userId);
+        const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.inventory?.activeColor) {
+                    setActiveColor(data.inventory.activeColor);
+                }
+            }
+        });
+        return () => unsubscribe();
+    }, [userId]);
+
     const onRegionChangeComplete = useCallback((region: Region) => {
         currentRegionRef.current = region;
         loadRoutesForRegion(region);
@@ -142,7 +156,6 @@ const MapScreen = () => {
         );
     }, [conqueredRoutes, loadRoutesForRegion]);
 
-    // Update visible routes when conqueredRoutes changes
     useEffect(() => {
         if (currentRegionRef.current) {
             setVisibleRoutes(
@@ -156,9 +169,87 @@ const MapScreen = () => {
         setAlertVisible(true);
     };
 
+    const startRun = async () => {
+        try {
+            setShowPermissionModal(false);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            const started = await startTracking();
+            if (!started) {
+                console.log("Tracking could not start");
+            }
+        } catch (error) {
+            console.error("Start tracking error:", error);
+            showAlert("Hata", "Takip başlatılamadı: " + (error as any).message, 'error');
+        }
+    };
+
+    // [YENİ] Kalkan Uygulama Fonksiyonu
+    const applyShield = async () => {
+        if (!selectedRoute || !user) return;
+
+        const shieldCount = userProfile?.inventory?.shields || 0;
+
+        if (shieldCount <= 0) {
+             Alert.alert("Yetersiz Stok", "Hiç kalkanın yok. Marketten satın almalısın.");
+             return;
+        }
+
+        // Zaten kalkanlı mı kontrol et
+        const now = Date.now();
+        const currentShield = selectedRoute.shieldUntil instanceof Timestamp 
+            ? selectedRoute.shieldUntil.toMillis() 
+            : 0;
+        
+        if (currentShield > now) {
+             Alert.alert("Zaten Korumada", "Bu rota zaten kalkan koruması altında.");
+             return;
+        }
+
+        Alert.alert(
+            "Kalkanı Kullan",
+            "1 adet kalkan harcayarak bu bölgeyi 24 saat korumaya almak istiyor musun?",
+            [
+                { text: "Vazgeç", style: "cancel" },
+                { 
+                    text: "Koru 🛡️", 
+                    onPress: async () => {
+                        try {
+                            const batch = writeBatch(db);
+                            const routeRef = doc(db, "routes", selectedRoute.id);
+                            const userRef = doc(db, "users", user.uid);
+
+                            // 24 Saat sonrası
+                            const shieldUntilDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                            const shieldTimestamp = Timestamp.fromDate(shieldUntilDate);
+
+                            // Rota güncelle
+                            batch.update(routeRef, { shieldUntil: shieldTimestamp });
+                            // Stoktan düş
+                            batch.update(userRef, { "inventory.shields": increment(-1) });
+
+                            await batch.commit();
+
+                            // Yerel state'i güncelle (Anlık görünmesi için)
+                            setConqueredRoutes(prev => prev.map(r => 
+                                r.id === selectedRoute.id ? {...r, shieldUntil: shieldTimestamp} : r
+                            ));
+                            
+                            // Modalı kapat ve seçimi kaldır
+                            setSelectedRoute(null); 
+                            
+                            Alert.alert("Bölge Korunuyor!", "Bu bölge 24 saat boyunca kimse tarafından gasp edilemez. 🛡️");
+                        } catch (err) {
+                            console.error("Kalkan hatası:", err);
+                            Alert.alert("Hata", "İşlem başarısız oldu.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleToggleTracking = async () => {
         if (isTracking) {
-            // STOPPING & SAVING
             setIsSaving(true);
             try {
                 const { coords: finalCoords, duration } = await stopTracking();
@@ -175,12 +266,30 @@ const MapScreen = () => {
                 const routesToCheck = conqueredRoutes.filter(r => r.ownerId !== userId);
 
                 for (const route of routesToCheck) {
+                    // [YENİ] Kalkan Kontrolü
+                    // Eğer rotanın kalkan süresi varsa ve şu andan büyükse (hala geçerliyse)
+                    const now = Date.now();
+                    const shieldTime = route.shieldUntil instanceof Timestamp ? route.shieldUntil.toMillis() : 0;
+
+                    if (shieldTime > now) {
+                        console.log(`Rota ${route.id} korumalı, pas geçiliyor.`);
+                        continue; // Gasp etme, döngüye devam et
+                    }
+
                     if (checkTurfIntersection(finalCoords, route.coords)) {
                         gaspedRoutes.push(route.id);
                     }
                 }
 
-                const baseScore = Math.floor(distanceKm * 10);
+                let baseScore = Math.floor(distanceKm * 10);
+                let multiplierMessage = "";
+
+                const activePotion = userProfile?.inventory?.activePotion;
+                if (activePotion === 'x2_potion') {
+                    baseScore *= 2;
+                    multiplierMessage = "\n🧪 x2 İksir Kullanıldı!";
+                }
+
                 const durationInSeconds = Math.floor(duration / 1000);
                 const geoPoints = finalCoords.map(c => new GeoPoint(c.latitude, c.longitude));
 
@@ -191,10 +300,8 @@ const MapScreen = () => {
                 }
 
                 try {
-                    // BATCH WRITES: Atomik işlem başlat
                     const batch = writeBatch(db);
 
-                    // 1. Yeni Rota Oluştur
                     const newRouteRef = doc(collection(db, "routes"));
                     const newRouteData = {
                         userId: userId,
@@ -210,59 +317,47 @@ const MapScreen = () => {
                     };
                     batch.set(newRouteRef, newRouteData);
 
-                    // 2. Kullanıcı İstatistiklerini Güncelle
                     const userRef = doc(db, "users", userId);
-                    batch.update(userRef, {
+                    const userUpdateData: any = {
                         totalDistance: increment(parseFloat(distanceKm.toFixed(2))),
                         totalRoutes: increment(1),
                         totalScore: increment(baseScore)
-                    });
+                    };
 
-                    // 3. Gasp Edilen Rotaları Güncelle VE BİLDİRİM GÖNDER [GÜNCELLENDİ]
+                    if (activePotion === 'x2_potion') {
+                        userUpdateData["inventory.activePotion"] = null;
+                    }
+
+                    batch.update(userRef, userUpdateData);
+
                     if (gaspedRoutes.length > 0) {
                         for (const routeId of gaspedRoutes) {
                             const routeToGaspRef = doc(db, "routes", routeId);
+                            const victimRoute = conqueredRoutes.find(r => r.id === routeId);
+                            const victimId = victimRoute?.ownerId;
 
-                            // A. Bildirim Gönderimi (Batch'ten bağımsız)
-                            try {
-                                const routeSnap = await getDoc(routeToGaspRef);
-                                if (routeSnap.exists()) {
-                                    const routeData = routeSnap.data();
-                                    const victimId = routeData.ownerId;
-
-                                    // Eğer gasp eden kişi zaten kendisi değilse bildirim at
-                                    if (victimId && victimId !== userId) {
-                                        // Mağdurun Push Token'ını al
-                                        const victimUserRef = doc(db, "users", victimId);
-                                        const victimSnap = await getDoc(victimUserRef);
-
-                                        if (victimSnap.exists()) {
-                                            const victimData = victimSnap.data();
-                                            const victimToken = victimData.expoPushToken;
-
-                                            if (victimToken) {
-                                                // 🔥 BİLDİRİMİ GÖNDER!
-                                                await sendPushNotification(
-                                                    victimToken,
-                                                    "⚔️ Bölgen Gasp Edildi!",
-                                                    "Biri koşu rotanı ele geçirdi! Geri almak için hemen koşuya çık."
-                                                );
-                                            }
+                            if (victimId && victimId !== userId) {
+                                const victimUserRef = doc(db, "users", victimId);
+                                getDoc(victimUserRef).then(victimSnap => {
+                                    if (victimSnap.exists()) {
+                                        const victimToken = victimSnap.data().expoPushToken;
+                                        if (victimToken) {
+                                            sendPushNotification(
+                                                victimToken,
+                                                "⚔️ Bölgen Gasp Edildi!",
+                                                "Biri koşu rotanı ele geçirdi! Geri almak için hemen koşuya çık."
+                                            );
                                         }
                                     }
-                                }
-                            } catch (err) {
-                                console.error("Gasp bildirimi gönderilirken hata:", err);
+                                }).catch(console.error);
                             }
 
-                            // B. Batch Güncellemesi
                             batch.update(routeToGaspRef, {
                                 ownerId: userId,
                                 claimedAt: serverTimestamp(),
-                                gaspScore: increment(5) // Her gasp için bonus
+                                gaspScore: increment(5)
                             });
 
-                            // Gaspçının puanını da artırabiliriz
                             batch.update(userRef, {
                                 totalScore: increment(5)
                             });
@@ -271,13 +366,11 @@ const MapScreen = () => {
                         showAlert("Bölge Fethedildi!", `Ek olarak ${gaspedRoutes.length} adet rakip bölgeyi ele geçirdin!`, 'success');
                     } else {
                         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        showAlert("Bölge Fethedildi!", `Mesafe: ${distanceKm.toFixed(2)} KM\nPuan: ${baseScore}`, 'success');
+                        showAlert("Bölge Fethedildi!", `Mesafe: ${distanceKm.toFixed(2)} KM\nPuan: ${baseScore}${multiplierMessage}`, 'success');
                     }
 
-                    // Batch işlemini onayla
                     await batch.commit();
 
-                    // Optimistic Update for UI
                     const newRoute: ConqueredRoute = {
                         id: newRouteRef.id,
                         ownerId: userId,
@@ -289,7 +382,6 @@ const MapScreen = () => {
                         geohash: routeGeohash
                     };
 
-                    // Gasp edilenleri de yerel state'te güncelle
                     setConqueredRoutes(prev => {
                         const updatedPrev = prev.map(r =>
                             gaspedRoutes.includes(r.id)
@@ -324,7 +416,6 @@ const MapScreen = () => {
                 setIsSaving(false);
             }
         } else {
-            // STARTING
             if (!userId) {
                 Alert.alert("Giriş Gerekli", "Lütfen giriş yapın.", [
                     { text: "Giriş", onPress: () => (navigation as any).navigate('AuthModal') },
@@ -334,14 +425,15 @@ const MapScreen = () => {
             }
 
             try {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                const started = await startTracking();
-                if (!started) {
-                    console.log("Tracking could not start");
+                const { status } = await Location.getBackgroundPermissionsAsync();
+                if (status !== 'granted') {
+                    setShowPermissionModal(true);
+                } else {
+                    await startRun();
                 }
             } catch (error) {
-                console.error("Start tracking error:", error);
-                showAlert("Hata", "Takip başlatılamadı: " + (error as any).message, 'error');
+                console.error("İzin kontrol hatası:", error);
+                setShowPermissionModal(true);
             }
         }
     };
@@ -378,6 +470,7 @@ const MapScreen = () => {
                     userMap={userMap}
                     handleRoutePress={setSelectedRoute}
                     getRouteMidpoint={getRouteMidpoint}
+                    userActiveColor={activeColor}
                 />
             </MapView>
 
@@ -403,6 +496,24 @@ const MapScreen = () => {
                 distanceKm={calculateRouteDistance(routeCoordinates)}
                 onToggleTracking={handleToggleTracking}
                 formatDuration={formatDuration}
+            />
+            
+            {/* [YENİ] Kalkan Kullan Butonu (Sadece kendi rotanı seçince ve takipte değilken görünür) */}
+            {selectedRoute && selectedRoute.ownerId === userId && !isTracking && (
+                <View style={styles.shieldButtonContainer}>
+                    <TouchableOpacity style={styles.shieldButton} onPress={applyShield}>
+                        <MaterialCommunityIcons name="shield-check" size={20} color="white" />
+                        <Text style={styles.shieldButtonText}>
+                            Kalkanla Koru ({userProfile?.inventory?.shields || 0})
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            <LocationPermissionModal 
+                visible={showPermissionModal}
+                onAccept={startRun}
+                onDecline={() => setShowPermissionModal(false)}
             />
 
             <CustomAlert
@@ -447,6 +558,28 @@ const styles = StyleSheet.create({
         color: '#388E3C',
         fontWeight: 'bold',
     },
+    // [YENİ] Kalkan butonu stili
+    shieldButtonContainer: {
+        position: 'absolute',
+        bottom: 180, // Kontrollerin üstünde
+        alignSelf: 'center',
+        zIndex: 20,
+    },
+    shieldButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.primary, // Yeşil tema
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 25,
+        ...SHADOWS.medium
+    },
+    shieldButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        marginLeft: 8,
+        fontSize: 14
+    }
 });
 
 export default MapScreen;
