@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react';
 import { Region } from 'react-native-maps';
 import {
@@ -16,6 +17,8 @@ export interface ConqueredRoute {
     claimedAt: Timestamp | FieldValue | undefined;
     durationSeconds?: number;
     geohash?: string;
+    // [YENİ] Kalkan süresi (Opsiyonel, çünkü her rotada olmayabilir)
+    shieldUntil?: Timestamp; 
 }
 
 export const useRouteFetcher = () => {
@@ -59,28 +62,34 @@ export const useRouteFetcher = () => {
             });
 
             const snapshots = await Promise.all(queries.map(q => getDocs(q)));
-            const newRoutes: ConqueredRoute[] = [];
+            const uniqueRoutesMap = new Map<string, ConqueredRoute>();
 
             snapshots.forEach(snapshot => {
                 snapshot.forEach(doc => {
-                    const data = doc.data();
-                    const routeCoords: Coordinate[] = (data.coords || []).map((gp: any) => ({
-                        latitude: gp.latitude,
-                        longitude: gp.longitude
-                    }));
+                    if (!uniqueRoutesMap.has(doc.id)) {
+                        const data = doc.data();
+                        const routeCoords: Coordinate[] = (data.coords || []).map((gp: any) => ({
+                            latitude: gp.latitude,
+                            longitude: gp.longitude
+                        }));
 
-                    newRoutes.push({
-                        id: doc.id,
-                        ownerId: data.ownerId || data.userId,
-                        coords: routeCoords,
-                        distanceKm: data.distanceKm || 0,
-                        gaspScore: data.gaspScore || 0,
-                        claimedAt: data.claimedAt,
-                        durationSeconds: data.durationSeconds,
-                        geohash: data.geohash
-                    });
+                        uniqueRoutesMap.set(doc.id, {
+                            id: doc.id,
+                            ownerId: data.ownerId || data.userId,
+                            coords: routeCoords,
+                            distanceKm: data.distanceKm || 0,
+                            gaspScore: data.gaspScore || 0,
+                            claimedAt: data.claimedAt,
+                            durationSeconds: data.durationSeconds,
+                            geohash: data.geohash,
+                            // [YENİ] Veriyi al
+                            shieldUntil: data.shieldUntil
+                        });
+                    }
                 });
             });
+
+            const newRoutes = Array.from(uniqueRoutesMap.values());
 
             if (newRoutes.length > 0) {
                 setConqueredRoutes(prevRoutes => {
@@ -91,7 +100,6 @@ export const useRouteFetcher = () => {
             }
         } catch (error) {
             console.error("Rotalar çekilirken hata: ", error);
-            // Remove failed geohashes so we can try again
             newGeohashesToLoad.forEach(hash => loadedGeohashes.current.delete(hash));
         } finally {
             setIsFetchingRoutes(false);

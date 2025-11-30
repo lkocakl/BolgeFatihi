@@ -10,6 +10,7 @@ interface UserEntry {
   userId: string;
   username: string;
   totalScore: number;
+  weeklyScore?: number; // [YENİ]
   profileImage?: string;
 }
 
@@ -17,25 +18,34 @@ const LeaderboardScreen = () => {
   const [loading, setLoading] = useState(true);
   const [leaderboard, setLeaderboard] = useState<UserEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  // Aktif sekme mantığını basitleştirdik çünkü artık tek bir puan kaynağımız var (totalScore)
-  // İleride isterseniz "totalDistance" gibi farklı sıralamalar ekleyebilirsiniz.
-  
+  const [activeTab, setActiveTab] = useState<'weekly' | 'all_time'>('weekly'); // [YENİ] Sekme durumu
+
   const fetchLeaderboard = async () => {
     setLoading(true);
     try {
-      // OPTİMİZASYON: Binlerce rotayı çekmek yerine sadece en yüksek puanlı 50 kullanıcıyı çekiyoruz.
       const usersRef = collection(db, "users");
-      const q = query(usersRef, orderBy("totalScore", "desc"), limit(50));
+      
+      // [YENİ] Seçili sekmeye göre sıralama alanı
+      const orderByField = activeTab === 'weekly' ? 'weeklyScore' : 'totalScore';
+      
+      const q = query(usersRef, orderBy(orderByField, "desc"), limit(50));
       
       const querySnapshot = await getDocs(q);
       const users: UserEntry[] = [];
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        // Haftalık puan henüz yoksa 0 kabul et
+        const wScore = data.weeklyScore || 0;
+        
+        // Eğer haftalık sekmedeysek ve puanı 0 ise listeye alma (opsiyonel)
+        if (activeTab === 'weekly' && wScore === 0) return;
+
         users.push({
           userId: doc.id,
           username: data.username || 'İsimsiz Fatih',
           totalScore: data.totalScore || 0,
+          weeklyScore: wScore,
           profileImage: data.profileImage
         });
       });
@@ -51,7 +61,7 @@ const LeaderboardScreen = () => {
 
   useEffect(() => {
     fetchLeaderboard();
-  }, []);
+  }, [activeTab]); // [YENİ] Tab değişince yeniden çek
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -61,6 +71,9 @@ const LeaderboardScreen = () => {
   const renderItem = ({ item, index }: { item: UserEntry, index: number }) => {
     const isTop3 = index < 3;
     const rankColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : COLORS.textSecondary;
+    
+    // [YENİ] Gösterilecek puanı seç
+    const displayScore = activeTab === 'weekly' ? item.weeklyScore : item.totalScore;
 
     return (
       <View style={[styles.row, isTop3 && styles.top3Row]}>
@@ -75,7 +88,9 @@ const LeaderboardScreen = () => {
           <Text style={[styles.username, isTop3 && styles.top3Text]}>{item.username}</Text>
         </View>
         <View style={styles.scoreContainer}>
-          <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>{item.totalScore} PTS</Text>
+          <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>
+            {displayScore} PTS
+          </Text>
         </View>
       </View>
     );
@@ -88,6 +103,22 @@ const LeaderboardScreen = () => {
        <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Liderlik Tablosu</Text>
         <Text style={styles.headerSubtitle}>Bölgenin Fatihleri</Text>
+
+        {/* [YENİ] Sekme Butonları */}
+        <View style={styles.tabContainer}>
+            <TouchableOpacity 
+                style={[styles.tab, activeTab === 'weekly' && styles.activeTab]}
+                onPress={() => setActiveTab('weekly')}
+            >
+                <Text style={[styles.tabText, activeTab === 'weekly' && styles.activeTabText]}>Bu Hafta</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+                style={[styles.tab, activeTab === 'all_time' && styles.activeTab]}
+                onPress={() => setActiveTab('all_time')}
+            >
+                <Text style={[styles.tabText, activeTab === 'all_time' && styles.activeTabText]}>Tüm Zamanlar</Text>
+            </TouchableOpacity>
+        </View>
        </View>
        
        {loading ? (
@@ -105,7 +136,9 @@ const LeaderboardScreen = () => {
             ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <MaterialCommunityIcons name="trophy-broken" size={64} color={COLORS.textSecondary} />
-                  <Text style={styles.emptyText}>Henüz veri yok</Text>
+                  <Text style={styles.emptyText}>
+                      {activeTab === 'weekly' ? 'Bu hafta henüz kimse puan kazanmadı.' : 'Henüz veri yok'}
+                  </Text>
                 </View>
             }
          />
@@ -123,7 +156,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
     marginTop: 50,
   },
   loadingText: {
@@ -133,7 +165,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingTop: SPACING.xl + 20,
-    paddingBottom: SPACING.l,
+    paddingBottom: SPACING.m,
     paddingHorizontal: SPACING.l,
     backgroundColor: COLORS.surface,
     borderBottomLeftRadius: 30,
@@ -152,6 +184,33 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: SPACING.xs,
+    marginBottom: SPACING.m,
+  },
+  // [YENİ] Tab Stilleri
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F0F0',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 5
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  activeTab: {
+    backgroundColor: 'white',
+    ...SHADOWS.small,
+  },
+  tabText: {
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  activeTabText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   listContent: {
     paddingHorizontal: SPACING.m,
@@ -210,6 +269,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.m,
     fontSize: FONT_SIZES.m,
     color: COLORS.textSecondary,
+    textAlign: 'center'
   }
 });
 

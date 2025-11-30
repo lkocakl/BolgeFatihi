@@ -20,12 +20,21 @@ Notifications.setNotificationHandler({
 export const usePushNotifications = (user: any) => {
   const [expoPushToken, setExpoPushToken] = useState<string | undefined>('');
   const [notification, setNotification] = useState<Notifications.Notification | boolean>(false);
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   // Token alma ve izin isteme fonksiyonu
   async function registerForPushNotificationsAsync() {
     let token;
+
+    const isExpoGo = Constants.default.appOwnership === 'expo';
+
+    if (Platform.OS === 'android' && isExpoGo) {
+      console.log(
+        'Expo Go Android push bildirimlerini desteklemiyor. Development build kullanın: https://docs.expo.dev/develop/development-builds/introduction/'
+      );
+      return;
+    }
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {

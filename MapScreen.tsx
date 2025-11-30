@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, Alert, TouchableOpacity, Modal, ScrollView as GenericScrollView } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import * as turf from '@turf/turf';
 import * as Haptics from 'expo-haptics';
@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
-import { useAuth } from './AuthContext';
+import { useAuth, Quest } from './AuthContext';
 import { geohashForLocation } from 'geofire-common';
 
 import LocationPermissionModal from './components/LocationPermissionModal';
@@ -25,6 +25,7 @@ import MapOverlay from './components/MapOverlay';
 import TrackingControls from './components/TrackingControls';
 import CustomAlert from './components/CustomAlert';
 import { COLORS, SHADOWS } from './constants/theme';
+import { generateDailyQuests, updateQuestProgress } from './QuestSystem';
 
 // --- TURF.JS TABANLI GASP KONTROLÜ ---
 const BUFFER_METERS = 10;
@@ -127,6 +128,10 @@ const MapScreen = () => {
         type: 'warning'
     });
 
+    // Görev Sistemi State'leri
+    const [questsVisible, setQuestsVisible] = useState(false);
+    const [dailyQuests, setDailyQuests] = useState<Quest[]>([]);
+
     const currentRegionRef = useRef<Region | null>(null);
     const MIN_DISTANCE_KM = 0.1;
 
@@ -147,6 +152,37 @@ const MapScreen = () => {
         });
         return () => unsubscribe();
     }, [userId]);
+
+    // GÜNLÜK GÖREV KONTROLÜ
+    useEffect(() => {
+        if (!user || !userProfile) return;
+
+        const checkDailyQuests = async () => {
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const lastDate = userProfile.lastQuestDate;
+
+            // Eğer bugün görevler henüz oluşturulmadıysa veya tarih farklıysa
+            if (lastDate !== today || !userProfile.dailyQuests) {
+                const newQuests = generateDailyQuests();
+                
+                try {
+                    const userRef = doc(db, "users", user.uid);
+                    await writeBatch(db).update(userRef, {
+                        dailyQuests: newQuests,
+                        lastQuestDate: today
+                    }).commit(); 
+                    
+                    setDailyQuests(newQuests);
+                } catch (e) {
+                    console.error("Görev oluşturma hatası:", e);
+                }
+            } else {
+                setDailyQuests(userProfile.dailyQuests);
+            }
+        };
+
+        checkDailyQuests();
+    }, [user, userProfile?.lastQuestDate]);
 
     const onRegionChangeComplete = useCallback((region: Region) => {
         currentRegionRef.current = region;
@@ -183,7 +219,6 @@ const MapScreen = () => {
         }
     };
 
-    // [YENİ] Kalkan Uygulama Fonksiyonu
     const applyShield = async () => {
         if (!selectedRoute || !user) return;
 
@@ -194,7 +229,6 @@ const MapScreen = () => {
              return;
         }
 
-        // Zaten kalkanlı mı kontrol et
         const now = Date.now();
         const currentShield = selectedRoute.shieldUntil instanceof Timestamp 
             ? selectedRoute.shieldUntil.toMillis() 
@@ -266,14 +300,12 @@ const MapScreen = () => {
                 const routesToCheck = conqueredRoutes.filter(r => r.ownerId !== userId);
 
                 for (const route of routesToCheck) {
-                    // [YENİ] Kalkan Kontrolü
-                    // Eğer rotanın kalkan süresi varsa ve şu andan büyükse (hala geçerliyse)
                     const now = Date.now();
                     const shieldTime = route.shieldUntil instanceof Timestamp ? route.shieldUntil.toMillis() : 0;
 
                     if (shieldTime > now) {
                         console.log(`Rota ${route.id} korumalı, pas geçiliyor.`);
-                        continue; // Gasp etme, döngüye devam et
+                        continue; 
                     }
 
                     if (checkTurfIntersection(finalCoords, route.coords)) {
@@ -321,12 +353,44 @@ const MapScreen = () => {
                     const userUpdateData: any = {
                         totalDistance: increment(parseFloat(distanceKm.toFixed(2))),
                         totalRoutes: increment(1),
-                        totalScore: increment(baseScore)
+                        totalScore: increment(baseScore),
+                        weeklyScore: increment(baseScore) // [YENİ] Haftalık puana ekle
                     };
 
                     if (activePotion === 'x2_potion') {
                         userUpdateData["inventory.activePotion"] = null;
                     }
+
+                    // --- GÜNLÜK GÖREV GÜNCELLEMESİ ---
+                    if (userProfile?.dailyQuests) {
+                        const runStats = {
+                            distance: parseFloat(distanceKm.toFixed(2)),
+                            time: Math.floor(duration / 1000 / 60), // Dakika
+                            score: baseScore,
+                            conquests: 1 + gaspedRoutes.length // Kendi rotan + gasp ettiklerin
+                        };
+
+                        const updatedQuests = updateQuestProgress(userProfile.dailyQuests, runStats);
+                        
+                        // Tamamlanan var mı kontrol et ve ödül ver
+                        let questReward = 0;
+                        const finalQuests = updatedQuests.map(q => {
+                            if (!q.isClaimed && q.progress >= q.target) {
+                                questReward += q.reward;
+                                return { ...q, isClaimed: true }; // Ödülü alındı işaretle
+                            }
+                            return q;
+                        });
+
+                        if (questReward > 0) {
+                            userUpdateData.totalScore = increment(baseScore + questReward);
+                            userUpdateData.weeklyScore = increment(baseScore + questReward);
+                            showAlert("Görev Tamamlandı!", `Tebrikler! Ekstra ${questReward} puan kazandın! 🎯`, 'success');
+                        }
+
+                        userUpdateData.dailyQuests = finalQuests;
+                    }
+                    // ---------------------------------
 
                     batch.update(userRef, userUpdateData);
 
@@ -359,7 +423,8 @@ const MapScreen = () => {
                             });
 
                             batch.update(userRef, {
-                                totalScore: increment(5)
+                                totalScore: increment(5),
+                                weeklyScore: increment(5) // [YENİ] Gasp puanını haftalığa da ekle
                             });
                         }
                         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -489,6 +554,64 @@ const MapScreen = () => {
                 </View>
             )}
 
+            {/* Görevler Butonu (Sol Üst) */}
+            <TouchableOpacity 
+                style={styles.questButton} 
+                onPress={() => setQuestsVisible(true)}
+            >
+                <MaterialCommunityIcons name="clipboard-list-outline" size={28} color="white" />
+                {/* Tamamlanmamış görev sayısı kadar rozet (opsiyonel) */}
+                {dailyQuests.filter(q => !q.isClaimed && q.progress >= q.target).length > 0 && (
+                    <View style={styles.badge} />
+                )}
+            </TouchableOpacity>
+
+            {/* Görevler Modalı */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={questsVisible}
+                onRequestClose={() => setQuestsVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Günlük Görevler</Text>
+                            <TouchableOpacity onPress={() => setQuestsVisible(false)}>
+                                <MaterialCommunityIcons name="close" size={24} color={COLORS.text} />
+                            </TouchableOpacity>
+                        </View>
+                        <GenericScrollView style={{marginTop: 10}}>
+                            {dailyQuests.map((quest) => {
+                                const isCompleted = quest.progress >= quest.target;
+                                const percent = Math.min(100, (quest.progress / quest.target) * 100);
+                                
+                                return (
+                                    <View key={quest.id} style={[styles.questItem, isCompleted && styles.questItemCompleted]}>
+                                        <View style={{flex: 1}}>
+                                            <Text style={styles.questDesc}>{quest.description}</Text>
+                                            <View style={styles.progressBarBg}>
+                                                <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: isCompleted ? '#4CAF50' : '#2196F3' }]} />
+                                            </View>
+                                            <Text style={styles.questProgressText}>
+                                                {quest.progress.toFixed(1)} / {quest.target} • {quest.reward} Puan
+                                            </Text>
+                                        </View>
+                                        {quest.isClaimed ? (
+                                            <MaterialCommunityIcons name="check-circle" size={32} color="#4CAF50" />
+                                        ) : isCompleted ? (
+                                            <MaterialCommunityIcons name="gift-outline" size={32} color="#FF9800" />
+                                        ) : (
+                                            <MaterialCommunityIcons name="clock-outline" size={32} color="#BDBDBD" />
+                                        )}
+                                    </View>
+                                );
+                            })}
+                        </GenericScrollView>
+                    </View>
+                </View>
+            </Modal>
+
             <TrackingControls
                 isTracking={isTracking}
                 isSaving={isSaving}
@@ -579,6 +702,85 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginLeft: 8,
         fontSize: 14
+    },
+    // [YENİ] Görev Butonu Stilleri
+    questButton: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        backgroundColor: COLORS.primary,
+        padding: 10,
+        borderRadius: 25,
+        ...SHADOWS.medium,
+        zIndex: 20
+    },
+    badge: {
+        position: 'absolute',
+        top: 0, right: 0,
+        width: 12, height: 12,
+        borderRadius: 6,
+        backgroundColor: 'red',
+        borderWidth: 2,
+        borderColor: 'white'
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        padding: 20
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        borderRadius: 20,
+        padding: 20,
+        maxHeight: '60%',
+        ...SHADOWS.medium
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.primaryDark
+    },
+    questItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F5F5',
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#EEE'
+    },
+    questItemCompleted: {
+        backgroundColor: '#E8F5E9',
+        borderColor: '#C8E6C9'
+    },
+    questDesc: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.text,
+        marginBottom: 6
+    },
+    progressBarBg: {
+        height: 6,
+        backgroundColor: '#E0E0E0',
+        borderRadius: 3,
+        marginBottom: 4,
+        overflow: 'hidden'
+    },
+    progressBarFill: {
+        height: '100%',
+        borderRadius: 3
+    },
+    questProgressText: {
+        fontSize: 11,
+        color: COLORS.textSecondary
     }
 });
 

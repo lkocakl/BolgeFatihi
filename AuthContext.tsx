@@ -4,12 +4,27 @@ import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
+// [YENİ] Görev Tipi Tanımı
+export interface Quest {
+  id: string;
+  type: 'DISTANCE' | 'TIME' | 'SCORE' | 'CONQUER';
+  target: number;
+  progress: number;
+  reward: number;
+  description: string;
+  isClaimed: boolean;
+}
+
 interface UserProfile {
   username?: string;
   email?: string;
   profileImage?: string;
   totalScore: number;
+  weeklyScore?: number; // Haftalık Lig için
   expoPushToken?: string;
+  // [YENİ] Görev alanları
+  dailyQuests?: Quest[];
+  lastQuestDate?: string; // Görevlerin en son oluşturulduğu tarih (YYYY-MM-DD)
   inventory?: {
       colors?: string[];
       activeColor?: string;

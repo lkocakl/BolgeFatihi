@@ -3,7 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import {
     StyleSheet, View, Text, TextInput, TouchableOpacity,
     ActivityIndicator, ScrollView, RefreshControl,
-    KeyboardAvoidingView, Platform, Image, Alert as StandardAlert // İsim çakışmasın diye değiştirdik
+    KeyboardAvoidingView, Platform, Image, Alert as StandardAlert
 } from 'react-native';
 import { doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail, signOut, deleteUser } from 'firebase/auth';
@@ -12,11 +12,10 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { db, auth, storage } from './firebaseConfig';
 import { useAuth } from './AuthContext';
-import { useAlert } from './AlertContext'; // [YENİ] Hook'u çağırdık
+import { useAlert } from './AlertContext';
 import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Badge from './components/Badge';
 
 const getBlobFromUri = async (uri: string): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -37,7 +36,7 @@ const getBlobFromUri = async (uri: string): Promise<Blob> => {
 const ProfileScreen = () => {
     const navigation = useNavigation();
     const { user, userProfile } = useAuth();
-    const { showAlert } = useAlert(); // [YENİ] Alert fonksiyonunu aldık
+    const { showAlert } = useAlert();
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -89,8 +88,6 @@ const ProfileScreen = () => {
     }, []);
 
     const handleImageSelection = async () => {
-        // Seçim menüsü için standart alert kullanılabilir veya custom modal yapılabilir.
-        // Şimdilik basitlik için standart alert button yapısını koruyoruz.
         StandardAlert.alert(
             "Profil Fotoğrafı",
             "Fotoğraf yüklemek için bir yöntem seçin",
@@ -157,7 +154,6 @@ const ProfileScreen = () => {
             // @ts-ignore
             blob.close && blob.close();
 
-            // [DEĞİŞTİRİLDİ] Custom Alert kullanımı
             showAlert("Başarılı", "Profil fotoğrafı güncellendi!", 'success');
         } catch (error: any) {
             if (error instanceof FirebaseError) {
@@ -170,13 +166,6 @@ const ProfileScreen = () => {
             setUploading(false);
         }
     };
-
-    const badges = [
-        { id: 'first_step', name: 'İlk Adım', description: 'İlk rotanı kaydet', icon: 'shoe-print', isUnlocked: stats.totalRoutes >= 1 },
-        { id: 'explorer', name: 'Kaşif', description: '5 fetih yap', icon: 'compass', isUnlocked: stats.totalRoutes >= 5 },
-        { id: 'marathoner', name: 'Maratoncu', description: 'Toplam 42km koş', icon: 'run', isUnlocked: stats.totalDistance >= 42 },
-        { id: 'conqueror', name: 'Fatih', description: '1000 puan topla', icon: 'crown', isUnlocked: stats.totalScore >= 1000 }
-    ];
 
     const handleUpdateProfile = async () => {
         if (!user) return;
@@ -193,7 +182,6 @@ const ProfileScreen = () => {
                 updatedAt: new Date()
             }, { merge: true });
             
-            // [DEĞİŞTİRİLDİ]
             showAlert("Başarılı", "Profil güncellendi!", 'success');
         } catch (error) {
             console.error("Update error:", error);
@@ -207,7 +195,6 @@ const ProfileScreen = () => {
         if (user?.email) {
             try {
                 await sendPasswordResetEmail(auth, user.email);
-                // [DEĞİŞTİRİLDİ]
                 showAlert("E-posta Gönderildi", "Şifre sıfırlama bağlantısı gönderildi.", 'success');
             } catch (error: any) {
                 showAlert("Hata", error.message, 'error');
@@ -224,9 +211,6 @@ const ProfileScreen = () => {
     };
 
     const handleDeleteAccount = () => {
-        // [ÖNEMLİ] Silme onayı gibi kritik kararlar için standart Alert'ün butonlarını kullanmak
-        // daha güvenlidir. CustomAlert'ü "Evet/Hayır" butonlu hale getirmediğimiz sürece
-        // burası standart kalmalı.
         StandardAlert.alert(
             "Hesabı Sil",
             "Hesabınızı ve tüm verilerinizi kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.",
@@ -301,29 +285,44 @@ const ProfileScreen = () => {
                         <Text style={styles.statLabel}>Puan</Text>
                     </View>
                 </View>
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>Başarımlar</Text>
-                    {badges.map(badge => (
-                        <Badge key={badge.id} {...badge} />
-                    ))}
-                </View>
-                <View style={{ marginHorizontal: SPACING.l, marginBottom: SPACING.m }}>
+
+                {/* Butonlar Alanı */}
+                <View style={styles.buttonsContainer}>
+                    {/* Geçmiş Koşularım Butonu */}
                     <TouchableOpacity 
-                        style={styles.historyButton} 
+                        style={styles.menuButton} 
                         onPress={() => (navigation as any).navigate('RouteHistory')}
                     >
                         <LinearGradient
-                            colors={['#4FC3F7', '#29B6F6']}
+                            colors={COLORS.primaryGradient as [string, string]} 
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
-                            style={styles.historyGradient}
+                            style={styles.menuGradient}
                         >
                             <MaterialCommunityIcons name="history" size={24} color="white" />
-                            <Text style={styles.historyButtonText}>Geçmiş Koşularım</Text>
+                            <Text style={styles.menuButtonText}>Geçmiş Koşularım</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={24} color="white" style={{ marginLeft: 'auto' }} />
+                        </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* Başarımlarım Butonu */}
+                    <TouchableOpacity 
+                        style={styles.menuButton} 
+                        onPress={() => (navigation as any).navigate('Achievements')}
+                    >
+                        <LinearGradient
+                            colors={COLORS.primaryGradient as [string, string]} 
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.menuGradient}
+                        >
+                            <MaterialCommunityIcons name="trophy-award" size={24} color="white" />
+                            <Text style={styles.menuButtonText}>Başarımlarım</Text>
                             <MaterialCommunityIcons name="chevron-right" size={24} color="white" style={{ marginLeft: 'auto' }} />
                         </LinearGradient>
                     </TouchableOpacity>
                 </View>
+
                 <View style={styles.formSection}>
                     <Text style={styles.sectionTitle}>Profil Ayarları</Text>
                     <View style={styles.inputContainer}>
@@ -408,7 +407,30 @@ const styles = StyleSheet.create({
     },
     statValue: { fontSize: FONT_SIZES.l, fontWeight: 'bold', color: COLORS.text, marginVertical: 4 },
     statLabel: { fontSize: FONT_SIZES.xs, color: COLORS.textSecondary },
-    sectionContainer: { marginHorizontal: SPACING.l, marginBottom: SPACING.l },
+    
+    // [YENİ] Butonlar için Konteyner
+    buttonsContainer: {
+        marginHorizontal: SPACING.l,
+        marginBottom: SPACING.l,
+        gap: SPACING.m
+    },
+    menuButton: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        ...SHADOWS.small,
+    },
+    menuGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: SPACING.m,
+    },
+    menuButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
+        marginLeft: SPACING.m
+    },
+
     formSection: { 
         backgroundColor: COLORS.surface, marginHorizontal: SPACING.l, 
         borderRadius: 20, padding: SPACING.l, ...SHADOWS.small, 
@@ -450,23 +472,6 @@ const styles = StyleSheet.create({
     },
     versionText: { textAlign: 'center', color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, opacity: 0.5, marginBottom: SPACING.l },
     infoText: { fontSize: FONT_SIZES.m, color: COLORS.textSecondary },
-    historyButton: {
-        borderRadius: 16,
-        overflow: 'hidden',
-        ...SHADOWS.small,
-    },
-    historyGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: SPACING.m,
-    },
-    historyButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 16,
-        marginLeft: SPACING.m
-    }
-
 });
 
 export default ProfileScreen;

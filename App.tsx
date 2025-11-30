@@ -21,6 +21,7 @@ import OnboardingScreen from './OnboardingScreen';
 import SocialScreen from './SocialScreen';
 import SocialSearchScreen from './SocialSearchScreen';
 import ChatScreen from './ChatScreen';
+import AchievementsScreen from './AchievementsScreen';
 
 import { usePushNotifications } from './hooks/usePushNotifications';
 
@@ -105,21 +106,23 @@ const AppContent = () => {
 
   return (
     <NavigationContainer>
-      <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Navigator initialRouteName="AppTabs" screenOptions={{ headerShown: false }}>
         {!viewedOnboarding && (
           <RootStack.Screen name="Onboarding">
             {props => <OnboardingScreen {...props} onFinish={() => setViewedOnboarding(true)} />}
           </RootStack.Screen>
         )}
+        
+        <RootStack.Screen name="AppTabs" component={MainAppTabs} />
+        <RootStack.Screen name="AuthModal" component={AuthScreen} options={{ presentation: 'modal', headerShown: true, headerTitle: 'Giriş Yap' }} />
+        <RootStack.Screen name="SearchUser" component={SocialSearchScreen} options={{ headerTitle: 'Arkadaş Ekle', headerShown: true }} />
+        <RootStack.Screen name="ChatScreen" component={ChatScreen} options={{ headerShown: false }} />
+        <RootStack.Screen name="Achievements" component={AchievementsScreen} options={{ headerTitle: 'Başarımlarım', headerShown: true }} />
         <RootStack.Screen 
   name="RouteHistory" 
   component={RouteHistoryScreen} 
   options={{ headerTitle: 'Geçmiş Koşularım', headerShown: true }} 
 />
-        <RootStack.Screen name="AppTabs" component={MainAppTabs} />
-        <RootStack.Screen name="AuthModal" component={AuthScreen} options={{ presentation: 'modal', headerShown: true, headerTitle: 'Giriş Yap' }} />
-        <RootStack.Screen name="SearchUser" component={SocialSearchScreen} options={{ headerTitle: 'Arkadaş Ekle', headerShown: true }} />
-        <RootStack.Screen name="ChatScreen" component={ChatScreen} options={{ headerShown: false }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
