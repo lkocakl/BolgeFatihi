@@ -11,6 +11,7 @@ import { AlertProvider } from './AlertContext';
 import ErrorBoundary from './ErrorBoundary';
 
 // Ana ekranlar
+import UserProfileScreen from './UserProfileScreen';
 import RouteHistoryScreen from './RouteHistoryScreen';
 import MapScreen from './MapScreen';
 import LeaderboardScreen from './LeaderboardScreen';
@@ -23,6 +24,7 @@ import SocialSearchScreen from './SocialSearchScreen';
 import ChatScreen from './ChatScreen';
 import AchievementsScreen from './AchievementsScreen';
 
+// Bildirim hook'u (Klasör yapınıza göre './usePushNotifications' da olabilir)
 import { usePushNotifications } from './hooks/usePushNotifications';
 
 const Tab = createBottomTabNavigator();
@@ -30,7 +32,9 @@ const RootStack = createStackNavigator();
 
 const MainAppTabs = () => {
   const { user, friendRequestsCount } = useAuth();
-  usePushNotifications(user);
+  
+  // [DÜZELTME] Hook bir 'user' argümanı beklediği için 'user' nesnesini buraya ekledik.
+  usePushNotifications(user); 
 
   return (
     <Tab.Navigator
@@ -114,15 +118,43 @@ const AppContent = () => {
         )}
         
         <RootStack.Screen name="AppTabs" component={MainAppTabs} />
-        <RootStack.Screen name="AuthModal" component={AuthScreen} options={{ presentation: 'modal', headerShown: true, headerTitle: 'Giriş Yap' }} />
-        <RootStack.Screen name="SearchUser" component={SocialSearchScreen} options={{ headerTitle: 'Arkadaş Ekle', headerShown: true }} />
-        <RootStack.Screen name="ChatScreen" component={ChatScreen} options={{ headerShown: false }} />
-        <RootStack.Screen name="Achievements" component={AchievementsScreen} options={{ headerTitle: 'Başarımlarım', headerShown: true }} />
+        
         <RootStack.Screen 
-  name="RouteHistory" 
-  component={RouteHistoryScreen} 
-  options={{ headerTitle: 'Geçmiş Koşularım', headerShown: true }} 
-/>
+          name="AuthModal" 
+          component={AuthScreen} 
+          options={{ presentation: 'modal', headerShown: true, headerTitle: 'Giriş Yap' }} 
+        />
+        
+        <RootStack.Screen 
+          name="SearchUser" 
+          component={SocialSearchScreen} 
+          options={{ headerTitle: 'Arkadaş Ekle', headerShown: true }} 
+        />
+        
+        <RootStack.Screen 
+          name="ChatScreen" 
+          component={ChatScreen} 
+          options={{ headerShown: false }} 
+        />
+        
+        {/* Liderlik tablosundan yönlendirme için UserProfileScreen */}
+        <RootStack.Screen 
+          name="UserProfileScreen" 
+          component={UserProfileScreen} 
+          options={{ headerTitle: 'Kullanıcı Profili', headerShown: true }} 
+        />
+
+        <RootStack.Screen 
+            name="Achievements" 
+            component={AchievementsScreen} 
+            options={{ headerTitle: 'Başarımlarım', headerShown: true }} 
+        />
+        
+        <RootStack.Screen 
+            name="RouteHistory" 
+            component={RouteHistoryScreen} 
+            options={{ headerTitle: 'Geçmiş Koşularım', headerShown: true }} 
+        />
       </RootStack.Navigator>
     </NavigationContainer>
   );

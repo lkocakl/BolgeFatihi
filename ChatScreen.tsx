@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-    View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform 
+    View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Image 
 } from 'react-native';
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc
@@ -13,7 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { sendPushNotification } from './utils';
 
 const ChatScreen = ({ route }: any) => {
-    const { friendId, friendName, chatId } = route.params;
+    const { friendId, friendName, chatId, profileImage } = route.params;
     const { user } = useAuth();
     const navigation = useNavigation();
     const [messages, setMessages] = useState<any[]>([]);
@@ -80,12 +80,27 @@ const ChatScreen = ({ route }: any) => {
     };
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView 
+            style={styles.container} 
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} 
+        >
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <MaterialCommunityIcons name="arrow-left" size={28} color={COLORS.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{friendName}</Text>
+                
+                <View style={styles.headerTitleContainer}> 
+                    {profileImage ? (
+                        <Image source={{ uri: profileImage }} style={styles.avatar} />
+                    ) : (
+                        <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarText}>{friendName?.charAt(0).toUpperCase()}</Text>
+                        </View>
+                    )}
+                    <Text style={styles.headerTitle}>{friendName}</Text>
+                </View>
+                
                 <View style={{ width: 28 }} />
             </View>
 
@@ -106,20 +121,18 @@ const ChatScreen = ({ route }: any) => {
                 }}
             />
 
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
-                <View style={styles.inputContainer}>
-                    <TextInput
-                        style={styles.input}
-                        value={text}
-                        onChangeText={setText}
-                        placeholder="Mesaj yaz..."
-                    />
-                    <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
-                        <MaterialCommunityIcons name="send" size={24} color="white" />
-                    </TouchableOpacity>
-                </View>
-            </KeyboardAvoidingView>
-        </View>
+            <View style={styles.inputContainer}>
+                <TextInput
+                    style={styles.input}
+                    value={text}
+                    onChangeText={setText}
+                    placeholder="Mesaj yaz..."
+                />
+                <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
+                    <MaterialCommunityIcons name="send" size={24} color="white" />
+                </TouchableOpacity>
+            </View>
+        </KeyboardAvoidingView>
     );
 };
 
@@ -137,7 +150,32 @@ const styles = StyleSheet.create({
         zIndex: 10
     },
     backButton: { padding: 5 },
-    headerTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
+    headerTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1, 
+        justifyContent: 'center',
+        paddingLeft: 28
+    },
+    headerTitle: { 
+        fontSize: 18, 
+        fontWeight: 'bold', 
+        color: COLORS.text, 
+        marginLeft: SPACING.s 
+    },
+    avatar: {
+        width: 32, 
+        height: 32, 
+        borderRadius: 16, 
+        backgroundColor: '#E0E0E0',
+    },
+    avatarPlaceholder: {
+        width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E0E0',
+        justifyContent: 'center', alignItems: 'center',
+    },
+    avatarText: { 
+        fontSize: 16, fontWeight: 'bold', color: '#555' 
+    },
     listContent: { padding: SPACING.m, paddingBottom: 20 },
     messageBubble: {
         maxWidth: '80%', padding: 12, borderRadius: 16, marginBottom: 8,
@@ -153,7 +191,9 @@ const styles = StyleSheet.create({
     messageText: { fontSize: 16 },
     inputContainer: {
         flexDirection: 'row', padding: SPACING.m, backgroundColor: 'white',
-        alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE'
+        alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE',
+        paddingBottom: Platform.OS === 'ios' ? SPACING.m + 10 : SPACING.m,
+        paddingTop: SPACING.s
     },
     input: {
         flex: 1, backgroundColor: '#F0F0F0', borderRadius: 20,

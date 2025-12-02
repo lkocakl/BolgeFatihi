@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { useNavigation } from '@react-navigation/native';
 import { db } from './firebaseConfig';
 import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,22 +11,22 @@ interface UserEntry {
   userId: string;
   username: string;
   totalScore: number;
-  weeklyScore?: number; // [YENİ]
+  weeklyScore?: number;
   profileImage?: string;
 }
 
 const LeaderboardScreen = () => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [leaderboard, setLeaderboard] = useState<UserEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'weekly' | 'all_time'>('weekly'); // [YENİ] Sekme durumu
+  const [activeTab, setActiveTab] = useState<'weekly' | 'all_time'>('weekly');
 
   const fetchLeaderboard = async () => {
     setLoading(true);
     try {
       const usersRef = collection(db, "users");
       
-      // [YENİ] Seçili sekmeye göre sıralama alanı
       const orderByField = activeTab === 'weekly' ? 'weeklyScore' : 'totalScore';
       
       const q = query(usersRef, orderBy(orderByField, "desc"), limit(50));
@@ -35,10 +36,8 @@ const LeaderboardScreen = () => {
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        // Haftalık puan henüz yoksa 0 kabul et
         const wScore = data.weeklyScore || 0;
         
-        // Eğer haftalık sekmedeysek ve puanı 0 ise listeye alma (opsiyonel)
         if (activeTab === 'weekly' && wScore === 0) return;
 
         users.push({
@@ -61,7 +60,7 @@ const LeaderboardScreen = () => {
 
   useEffect(() => {
     fetchLeaderboard();
-  }, [activeTab]); // [YENİ] Tab değişince yeniden çek
+  }, [activeTab]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -72,27 +71,38 @@ const LeaderboardScreen = () => {
     const isTop3 = index < 3;
     const rankColor = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : COLORS.textSecondary;
     
-    // [YENİ] Gösterilecek puanı seç
     const displayScore = activeTab === 'weekly' ? item.weeklyScore : item.totalScore;
 
+    const handlePress = () => {
+        // Not: 'UserProfile' ekranının navigasyonda tanımlı olması gerekir.
+        // O ekranda arkadaş ekleme butonu vs. yer alabilir.
+        (navigation as any).navigate('UserProfileScreen', { 
+            userId: item.userId, 
+            username: item.username,
+            profileImage: item.profileImage 
+        });
+    };
+
     return (
-      <View style={[styles.row, isTop3 && styles.top3Row]}>
-        <View style={styles.rankContainer}>
-            {index === 0 ? (
-               <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
-            ) : (
-               <Text style={[styles.rank, { color: rankColor }]}>#{index + 1}</Text>
-            )}
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
+        <View style={[styles.row, isTop3 && styles.top3Row]}>
+            <View style={styles.rankContainer}>
+                {index === 0 ? (
+                <MaterialCommunityIcons name="crown" size={24} color="#FFD700" />
+                ) : (
+                <Text style={[styles.rank, { color: rankColor }]}>#{index + 1}</Text>
+                )}
+            </View>
+            <View style={styles.userInfo}>
+            <Text style={[styles.username, isTop3 && styles.top3Text]}>{item.username}</Text>
+            </View>
+            <View style={styles.scoreContainer}>
+            <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>
+                {displayScore} PTS
+            </Text>
+            </View>
         </View>
-        <View style={styles.userInfo}>
-          <Text style={[styles.username, isTop3 && styles.top3Text]}>{item.username}</Text>
-        </View>
-        <View style={styles.scoreContainer}>
-          <Text style={[styles.score, { color: isTop3 ? COLORS.primary : COLORS.secondaryDark }]}>
-            {displayScore} PTS
-          </Text>
-        </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -104,7 +114,6 @@ const LeaderboardScreen = () => {
         <Text style={styles.headerTitle}>Liderlik Tablosu</Text>
         <Text style={styles.headerSubtitle}>Bölgenin Fatihleri</Text>
 
-        {/* [YENİ] Sekme Butonları */}
         <View style={styles.tabContainer}>
             <TouchableOpacity 
                 style={[styles.tab, activeTab === 'weekly' && styles.activeTab]}
@@ -186,7 +195,6 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     marginBottom: SPACING.m,
   },
-  // [YENİ] Tab Stilleri
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: '#F0F0F0',

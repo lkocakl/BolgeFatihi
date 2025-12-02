@@ -94,7 +94,8 @@ const SocialScreen = () => {
         (navigation as any).navigate('ChatScreen', {
             chatId: chatId,
             friendId: friend.id,
-            friendName: friend.username
+            friendName: friend.username,
+            profileImage: friend.profileImage // EKLENDİ: Profil resmi gönderiliyor
         });
     };
 
