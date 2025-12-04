@@ -1,10 +1,9 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
-// [YENİ] Görev Tipi Tanımı
 export interface Quest {
   id: string;
   type: 'DISTANCE' | 'TIME' | 'SCORE' | 'CONQUER';
@@ -20,11 +19,10 @@ interface UserProfile {
   email?: string;
   profileImage?: string;
   totalScore: number;
-  weeklyScore?: number; // Haftalık Lig için
+  weeklyScore?: number;
   expoPushToken?: string;
-  // [YENİ] Görev alanları
   dailyQuests?: Quest[];
-  lastQuestDate?: string; // Görevlerin en son oluşturulduğu tarih (YYYY-MM-DD)
+  lastQuestDate?: string;
   inventory?: {
       colors?: string[];
       activeColor?: string;
@@ -38,13 +36,17 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   loading: boolean;
   friendRequestsCount: number;
+  unreadMessagesCount: number;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({ 
     user: null, 
     userProfile: null, 
     loading: true,
-    friendRequestsCount: 0 
+    friendRequestsCount: 0,
+    unreadMessagesCount: 0,
+    logout: async () => {}
 });
 
 interface AuthProviderProps {
@@ -56,19 +58,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [friendRequestsCount, setFriendRequestsCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
 
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
     let unsubscribeRequests: (() => void) | null = null;
+    let unsubscribeChats: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
 
+      // Temizlik
       if (unsubscribeFirestore) unsubscribeFirestore();
       if (unsubscribeRequests) unsubscribeRequests();
+      if (unsubscribeChats) unsubscribeChats();
 
       if (currentUser) {
-        // 1. Profil Dinleyicisi
+        // 1. Profil
         const userDocRef = doc(db, "users", currentUser.uid);
         unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -79,7 +85,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setLoading(false);
         });
 
-        // 2. Arkadaşlık İstekleri Sayısını Dinle
+        // 2. Arkadaşlık İstekleri
         const requestsQuery = query(
             collection(db, "friend_requests"), 
             where("toId", "==", currentUser.uid), 
@@ -90,9 +96,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             setFriendRequestsCount(snapshot.size);
         });
 
+        // 3. Okunmamış Mesajlar
+        // Kullanıcının katılımcı olduğu sohbetler
+        const chatsQuery = query(
+            collection(db, "chats"),
+            where("participants", "array-contains", currentUser.uid)
+        );
+
+        unsubscribeChats = onSnapshot(chatsQuery, (snapshot) => {
+            let totalUnread = 0;
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                // 'unreadCounts' alanı ve benim ID'm var mı?
+                if (data.unreadCounts && typeof data.unreadCounts[currentUser.uid] === 'number') {
+                    totalUnread += data.unreadCounts[currentUser.uid];
+                }
+            });
+            setUnreadMessagesCount(totalUnread);
+        }, (error) => {
+            console.log("Chat dinleme hatası (İzinler güncellenmeli):", error.message);
+        });
+
       } else {
         setUserProfile(null);
         setFriendRequestsCount(0);
+        setUnreadMessagesCount(0);
         setLoading(false);
       }
     });
@@ -101,8 +129,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       unsubscribeAuth();
       if (unsubscribeFirestore) unsubscribeFirestore();
       if (unsubscribeRequests) unsubscribeRequests();
+      if (unsubscribeChats) unsubscribeChats();
     };
   }, []);
+
+  const logout = async () => {
+      await signOut(auth);
+  };
 
   if (loading) {
     return (
@@ -113,15 +146,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, friendRequestsCount }}>
+    <AuthContext.Provider value={{ 
+        user, 
+        userProfile, 
+        loading, 
+        friendRequestsCount, 
+        unreadMessagesCount,
+        logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
+export const useAuth = () => useContext(AuthContext);
 
 const styles = StyleSheet.create({
   centerContainer: {

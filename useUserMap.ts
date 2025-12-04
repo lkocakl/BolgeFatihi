@@ -1,14 +1,23 @@
 import { useState, useEffect } from 'react';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+// [DÜZELTME] Dosya bir alt klasörde olduğu için bir üst dizine çıkmak gerekir (../)
+import { db } from '../firebaseConfig'; 
+import { useAuth } from '../AuthContext'; 
 
 export type UserMap = { [userId: string]: string };
 
 export const useUserMap = () => {
     const [userMap, setUserMap] = useState<UserMap>({});
     const [loading, setLoading] = useState(true);
+    const { user } = useAuth(); 
 
     useEffect(() => {
+        // Eğer kullanıcı henüz giriş yapmadıysa sorgu yapma
+        if (!user) {
+            setLoading(false);
+            return;
+        }
+
         const usersCollectionRef = collection(db, "users");
         const q = query(usersCollectionRef);
 
@@ -16,7 +25,7 @@ export const useUserMap = () => {
             const newMap: UserMap = {};
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                // Fallback to a masked ID if username is missing
+                // Kullanıcı adı yoksa ID'nin son 6 hanesini göster
                 newMap[doc.id] = data.username || `...@${doc.id.substring(doc.id.length - 6)}`;
             });
             setUserMap(newMap);
@@ -27,7 +36,7 @@ export const useUserMap = () => {
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [user]);
 
     return { userMap, loading };
 };

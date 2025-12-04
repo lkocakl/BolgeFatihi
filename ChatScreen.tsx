@@ -3,7 +3,7 @@ import {
     View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Image 
 } from 'react-native';
 import { 
-    collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc
+    collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, increment 
 } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import { db } from './firebaseConfig';
@@ -19,6 +19,25 @@ const ChatScreen = ({ route }: any) => {
     const [messages, setMessages] = useState<any[]>([]);
     const [text, setText] = useState('');
     const flatListRef = useRef<FlatList>(null);
+
+    // Sohbet açıldığında kendi sayacımızı sıfırla
+    useEffect(() => {
+        if (!user || !chatId) return;
+
+        const markAsRead = async () => {
+            try {
+                const chatRef = doc(db, "chats", chatId);
+                // Hata almamak için updateDoc kullanıyoruz, belge yoksa catch'e düşer
+                await updateDoc(chatRef, {
+                    [`unreadCounts.${user.uid}`]: 0
+                });
+            } catch (error) {
+                console.log("Okundu bilgisi güncellenemedi (Normal, ilk mesaj olabilir)");
+            }
+        };
+
+        markAsRead();
+    }, [chatId, user, messages.length]); // Mesaj sayısı değişince de tetikle (ekran açıkken gelen mesaj için)
 
     useEffect(() => {
         if (!chatId) return;
@@ -41,25 +60,30 @@ const ChatScreen = ({ route }: any) => {
     const handleSend = async () => {
         if (text.trim().length === 0 || !user) return;
 
+        const messageText = text.trim();
+        setText(''); // Hızlı UI tepkisi için önce temizle
+
         try {
+            // 1. Mesajı Alt Koleksiyona Ekle
             const messagesRef = collection(db, "chats", chatId, "messages");
             await addDoc(messagesRef, {
-                text: text.trim(),
+                text: messageText,
                 senderId: user.uid,
                 createdAt: serverTimestamp()
             });
 
+            // 2. Ana Sohbet Belgesini Güncelle (Bildirim Sayacı Burada)
             const chatRef = doc(db, "chats", chatId);
+            
+            // setDoc ile merge: true kullanarak hem oluşturma hem güncelleme garantiye alınır
             await setDoc(chatRef, {
-                lastMessage: text.trim(),
+                lastMessage: messageText,
                 lastMessageTime: serverTimestamp(),
-                participants: [user.uid, friendId]
+                participants: [user.uid, friendId], // Katılımcıları her zaman güncelle/garantile
+                [`unreadCounts.${friendId}`]: increment(1) // Karşı tarafın sayacını artır
             }, { merge: true });
 
-            const messageText = text.trim();
-            setText('');
-
-            // Karşı tarafa bildirim gönder
+            // 3. Bildirim Gönder
             const friendUserDoc = await getDoc(doc(db, "users", friendId));
             if (friendUserDoc.exists()) {
                 const friendData = friendUserDoc.data();
@@ -69,13 +93,14 @@ const ChatScreen = ({ route }: any) => {
                     await sendPushNotification(
                         friendToken,
                         "Yeni Mesaj 💬",
-                        messageText
+                        `Mesajın var: ${messageText}`
                     );
                 }
             }
 
         } catch (error) {
             console.error("Mesaj gönderme hatası:", error);
+            setText(messageText); // Hata olursa metni geri getir
         }
     };
 

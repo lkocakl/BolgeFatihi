@@ -10,6 +10,10 @@ import {
     getTrackingStartTime,
 } from '../backgroundLocationTask';
 
+// [YENİ] Koşu/yürüyüş için makul kabul edilebilir maksimum hız sınırı (saniyede metre)
+// 6 m/s = ~21.6 km/s. Bu hızın üzerindeki veriler araçla gidildiğini varsayarak yoksayılacak.
+const MAX_VALID_SPEED_MS = 6;
+
 export const useRouteTracker = () => {
     const [isTracking, setIsTracking] = useState<boolean>(false);
     const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
@@ -123,6 +127,16 @@ export const useRouteTracker = () => {
                     distanceInterval: 5,
                 },
                 (location) => {
+                    // [YENİ] Hız kontrolü: Eğer hız limitin üzerindeyse (örn. araba ile gidiliyorsa) koordinatı kaydetme.
+                    // speed m/s cinsindendir. Android'de speed null gelebilir, 0 kabul edip işlem yapıyoruz.
+                    const currentSpeed = location.coords.speed || 0; 
+                    
+                    // Eğer rota halihazırda başladıysa ve hız çok yüksekse, bu noktayı atla.
+                    if (currentSpeed > MAX_VALID_SPEED_MS && routeCoordinates.length > 0) {
+                        console.log(`Hız çok yüksek (${currentSpeed.toFixed(2)} m/s), koordinat yoksayılıyor.`);
+                        return;
+                    }
+
                     const newCoord = {
                         latitude: location.coords.latitude,
                         longitude: location.coords.longitude
@@ -170,22 +184,6 @@ export const useRouteTracker = () => {
                 latitude: c.latitude,
                 longitude: c.longitude
             }));
-            // Simple merge strategy: prefer background coords if they are more complete, 
-            // but here we just append or replace. 
-            // Since foreground updates `routeCoordinates` live, we might have duplicates if we just append.
-            // For simplicity and robustness, let's trust the background coords as the source of truth for the whole run if it was active,
-            // OR just use the live ones if the user was looking at the screen.
-            // The original code merged them: `allCoords = [...routeCoordinates, ...bgCoordsFormatted];` 
-            // which seems wrong (duplication). 
-            // Let's assume background coords contain everything if the app was backgrounded.
-            // If the app was foregrounded, `routeCoordinates` has everything.
-            // A safe bet is to use `routeCoordinates` and append any *newer* points from background, but that's complex.
-            // Let's stick to the original logic for now but maybe improve it slightly:
-            // If background tracking was active, it captures ALL points? No, only when backgrounded?
-            // `backgroundLocationTask.ts` says it saves locations.
-            // Let's just return the current `routeCoordinates` for now, as `watchPositionAsync` should have caught them if foregrounded.
-            // If backgrounded, `routeCoordinates` wouldn't update.
-            // So we MUST fetch from background storage.
 
             if (bgCoordsFormatted.length > routeCoordinates.length) {
                 finalCoords = bgCoordsFormatted;
@@ -216,7 +214,7 @@ export const useRouteTracker = () => {
         startTracking,
         stopTracking,
         resetTracking,
-        setRouteCoordinates, // Exposed for manual manipulation if needed
+        setRouteCoordinates,
         setRunDuration
     };
 };

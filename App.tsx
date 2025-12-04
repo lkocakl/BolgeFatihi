@@ -24,17 +24,20 @@ import SocialSearchScreen from './SocialSearchScreen';
 import ChatScreen from './ChatScreen';
 import AchievementsScreen from './AchievementsScreen';
 
-// Bildirim hook'u (Klasör yapınıza göre './usePushNotifications' da olabilir)
+// Bildirim hook'u
 import { usePushNotifications } from './hooks/usePushNotifications';
 
 const Tab = createBottomTabNavigator();
 const RootStack = createStackNavigator();
 
 const MainAppTabs = () => {
-  const { user, friendRequestsCount } = useAuth();
+  // Okunmamış mesaj sayısını da alıyoruz
+  const { user, friendRequestsCount, unreadMessagesCount } = useAuth();
   
-  // [DÜZELTME] Hook bir 'user' argümanı beklediği için 'user' nesnesini buraya ekledik.
   usePushNotifications(user); 
+
+  // Toplam bildirim sayısı: İstekler + Okunmamış Mesajlar
+  const totalNotifications = friendRequestsCount + unreadMessagesCount;
 
   return (
     <Tab.Navigator
@@ -62,7 +65,8 @@ const MainAppTabs = () => {
         name="Sosyal" 
         component={SocialScreen} 
         options={{
-            tabBarBadge: friendRequestsCount > 0 ? friendRequestsCount : undefined,
+            // Eğer toplam bildirim varsa badge göster, yoksa gösterme
+            tabBarBadge: totalNotifications > 0 ? totalNotifications : undefined,
         }}
       />
       
@@ -137,7 +141,6 @@ const AppContent = () => {
           options={{ headerShown: false }} 
         />
         
-        {/* Liderlik tablosundan yönlendirme için UserProfileScreen */}
         <RootStack.Screen 
           name="UserProfileScreen" 
           component={UserProfileScreen} 

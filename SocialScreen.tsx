@@ -20,29 +20,59 @@ const SocialScreen = () => {
     const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
     const [requests, setRequests] = useState<any[]>([]);
     const [friends, setFriends] = useState<any[]>([]);
+    const [unreadMap, setUnreadMap] = useState<{[key: string]: number}>({});
 
+    // Arkadaşlık İstekleri
     useEffect(() => {
         if (!user) return;
-
         const requestsRef = collection(db, "friend_requests");
         const qRequests = query(requestsRef, where("toId", "==", user.uid), where("status", "==", "pending"));
         
         const unsubRequests = onSnapshot(qRequests, (snapshot) => {
             setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
+        return () => unsubRequests();
+    }, [user]);
 
-        if (userProfile) {
-           loadFriends();
-        }
+    // Arkadaş Listesi
+    useEffect(() => {
+        if (userProfile) loadFriends();
+    }, [userProfile]);
 
-        return () => {
-            unsubRequests();
-        };
-    }, [user, userProfile]);
+    // Okunmamış Mesajları Dinle
+    useEffect(() => {
+        if (!user) return;
+
+        const qChats = query(
+            collection(db, "chats"), 
+            where("participants", "array-contains", user.uid)
+        );
+
+        const unsubChats = onSnapshot(qChats, (snapshot) => {
+            const newUnreadMap: {[key: string]: number} = {};
+            
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const friendId = data.participants.find((id: string) => id !== user.uid);
+                
+                // Benim okunmamış mesaj sayım
+                const myUnreadCount = data.unreadCounts ? data.unreadCounts[user.uid] : 0;
+
+                if (friendId && myUnreadCount > 0) {
+                    newUnreadMap[friendId] = myUnreadCount;
+                }
+            });
+            setUnreadMap(newUnreadMap);
+        }, (error) => {
+            // İzin hatası varsa sessizce geç veya logla
+            console.log("Sohbet verisi alınamadı:", error);
+        });
+
+        return () => unsubChats();
+    }, [user]);
 
     const loadFriends = async () => {
         if (!user) return;
-        
         const userDoc = await getDoc(doc(db, "users", user.uid));
         const friendIds = userDoc.data()?.friends || [];
 
@@ -64,25 +94,24 @@ const SocialScreen = () => {
         if (!user) return;
         try {
             await deleteDoc(doc(db, "friend_requests", request.id));
-
             const myRef = doc(db, "users", user.uid);
             const senderRef = doc(db, "users", request.fromId);
-
             await updateDoc(myRef, { friends: arrayUnion(request.fromId) });
             await updateDoc(senderRef, { friends: arrayUnion(user.uid) });
 
+            // Sohbeti başlat ve sayaçları sıfırla
             const chatId = [user.uid, request.fromId].sort().join('_');
             const chatRef = doc(db, "chats", chatId);
             await setDoc(chatRef, {
                 participants: [user.uid, request.fromId],
                 createdAt: new Date(),
                 lastMessage: "Sohbet başladı!",
-                lastMessageTime: new Date()
+                lastMessageTime: new Date(),
+                unreadCounts: { [user.uid]: 0, [request.fromId]: 0 }
             }, { merge: true });
 
             showAlert("Harika!", `${request.fromName} ile artık arkadaşsınız.`, 'success');
             loadFriends(); 
-
         } catch (error) {
             console.error("Kabul hatası:", error);
             showAlert("Hata", "İşlem başarısız.", 'error');
@@ -95,7 +124,7 @@ const SocialScreen = () => {
             chatId: chatId,
             friendId: friend.id,
             friendName: friend.username,
-            profileImage: friend.profileImage // EKLENDİ: Profil resmi gönderiliyor
+            profileImage: friend.profileImage
         });
     };
 
@@ -116,20 +145,29 @@ const SocialScreen = () => {
         </View>
     );
 
-    const renderFriend = ({ item }: any) => (
-        <TouchableOpacity style={styles.card} onPress={() => openChat(item)}>
-            <View style={styles.friendInfo}>
-                <View style={styles.avatarPlaceholder}>
-                     <Text style={styles.avatarText}>{item.username?.charAt(0).toUpperCase()}</Text>
+    const renderFriend = ({ item }: any) => {
+        const unreadCount = unreadMap[item.id] || 0;
+        return (
+            <TouchableOpacity style={styles.card} onPress={() => openChat(item)}>
+                <View style={styles.friendInfo}>
+                    <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarText}>{item.username?.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.friendName}>{item.username}</Text>
+                        <Text style={styles.friendScore}>Puan: {item.totalScore || 0}</Text>
+                    </View>
                 </View>
-                <View>
-                    <Text style={styles.friendName}>{item.username}</Text>
-                    <Text style={styles.friendScore}>Puan: {item.totalScore || 0}</Text>
-                </View>
-            </View>
-            <MaterialCommunityIcons name="message-text-outline" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-    );
+                {unreadCount > 0 ? (
+                    <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>{unreadCount}</Text>
+                    </View>
+                ) : (
+                    <MaterialCommunityIcons name="message-text-outline" size={24} color={COLORS.primary} />
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -148,7 +186,6 @@ const SocialScreen = () => {
                         <MaterialCommunityIcons name="account-plus" size={24} color={COLORS.primary} />
                     </TouchableOpacity>
                 </View>
-
                 <View style={styles.tabsContainer}>
                     <TouchableOpacity 
                         style={[styles.tab, activeTab === 'friends' && styles.activeTab]} 
@@ -286,6 +323,20 @@ const styles = StyleSheet.create({
         marginTop: SPACING.s,
         color: COLORS.textSecondary,
         fontSize: FONT_SIZES.m
+    },
+    unreadBadge: {
+        backgroundColor: '#FF5252',
+        borderRadius: 10,
+        minWidth: 22,
+        height: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 5,
+    },
+    unreadText: {
+        color: 'white',
+        fontSize: 11,
+        fontWeight: 'bold'
     }
 });
 
