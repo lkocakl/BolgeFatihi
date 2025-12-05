@@ -25,6 +25,7 @@
     },
     "android": {
       "package": "com.kocak.BolgeFatihi",
+      "softwareKeyboardLayoutMode": "resize",
       "versionCode": 2,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

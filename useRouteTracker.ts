@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
-import { Alert } from 'react-native';
-import { Coordinate } from '../utils';
+import * as Speech from 'expo-speech'; // [YENİ] Sesli asistan
+import { Coordinate, calculateRouteDistance } from '../utils'; // [YENİ] Mesafe hesabı gerekli
 import {
     startBackgroundTracking,
     stopBackgroundTracking,
@@ -10,9 +10,8 @@ import {
     getTrackingStartTime,
 } from '../backgroundLocationTask';
 
-// [YENİ] Koşu/yürüyüş için makul kabul edilebilir maksimum hız sınırı (saniyede metre)
-// 6 m/s = ~21.6 km/s. Bu hızın üzerindeki veriler araçla gidildiğini varsayarak yoksayılacak.
 const MAX_VALID_SPEED_MS = 6;
+const MIN_VALID_SPEED_MS = 0.5;
 
 export const useRouteTracker = () => {
     const [isTracking, setIsTracking] = useState<boolean>(false);
@@ -26,7 +25,9 @@ export const useRouteTracker = () => {
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const backgroundTrackingActive = useRef<boolean>(false);
 
-    // Initialize location
+    // [YENİ] Son konuşulan km bilgisini tutar (Örn: 1. km söylendi, tekrar söyleme)
+    const lastSpokenKm = useRef<number>(0);
+
     useEffect(() => {
         let isMounted = true;
 
@@ -55,7 +56,6 @@ export const useRouteTracker = () => {
                 if (isMounted) setErrorMsg("Konum bilgisi alınamadı.");
             }
 
-            // Check for existing background session
             try {
                 const bgCoords = await getBackgroundRouteCoords();
                 const bgStartTime = await getTrackingStartTime();
@@ -86,7 +86,6 @@ export const useRouteTracker = () => {
         };
     }, []);
 
-    // Timer logic
     useEffect(() => {
         if (isTracking) {
             const startTime = Date.now() - runDuration;
@@ -116,9 +115,12 @@ export const useRouteTracker = () => {
         await clearBackgroundRouteCoords();
         setRouteCoordinates([]);
         setRunDuration(0);
+        lastSpokenKm.current = 0; // [YENİ] Km sayacını sıfırla
         setIsTracking(true);
 
-        // Start foreground tracking FIRST to ensure responsiveness
+        // [YENİ] Başlangıç konuşması
+        Speech.speak("Koşu başladı. İyi şanslar!", { language: 'tr-TR' });
+
         try {
             locationSubscription.current = await Location.watchPositionAsync(
                 {
@@ -127,13 +129,18 @@ export const useRouteTracker = () => {
                     distanceInterval: 5,
                 },
                 (location) => {
-                    // [YENİ] Hız kontrolü: Eğer hız limitin üzerindeyse (örn. araba ile gidiliyorsa) koordinatı kaydetme.
-                    // speed m/s cinsindendir. Android'de speed null gelebilir, 0 kabul edip işlem yapıyoruz.
-                    const currentSpeed = location.coords.speed || 0; 
-                    
-                    // Eğer rota halihazırda başladıysa ve hız çok yüksekse, bu noktayı atla.
+                    let currentSpeed = location.coords.speed;
+                    if (currentSpeed === null || currentSpeed < 0) currentSpeed = 0;
+
                     if (currentSpeed > MAX_VALID_SPEED_MS && routeCoordinates.length > 0) {
-                        console.log(`Hız çok yüksek (${currentSpeed.toFixed(2)} m/s), koordinat yoksayılıyor.`);
+                        return;
+                    }
+
+                    if (currentSpeed < MIN_VALID_SPEED_MS && location.coords.accuracy && location.coords.accuracy > 20 && routeCoordinates.length > 0) {
+                        setCurrentLocation({
+                            latitude: location.coords.latitude,
+                            longitude: location.coords.longitude
+                        });
                         return;
                     }
 
@@ -141,7 +148,27 @@ export const useRouteTracker = () => {
                         latitude: location.coords.latitude,
                         longitude: location.coords.longitude
                     };
-                    setRouteCoordinates(prevCoords => [...prevCoords, newCoord]);
+
+                    // [YENİ] Sesli Geri Bildirim Mantığı
+                    setRouteCoordinates(prevCoords => {
+                        const updatedCoords = [...prevCoords, newCoord];
+
+                        // Mesafeyi hesapla
+                        const totalDistKm = calculateRouteDistance(updatedCoords);
+                        const currentKmFloor = Math.floor(totalDistKm);
+
+                        // Eğer yeni bir km tamamlandıysa (örn: 0.9'dan 1.0'a geçildi)
+                        if (currentKmFloor > 0 && currentKmFloor > lastSpokenKm.current) {
+                            lastSpokenKm.current = currentKmFloor;
+                            Speech.speak(`Tebrikler, ${currentKmFloor}. kilometreyi tamamladın!`, {
+                                language: 'tr-TR',
+                                rate: 0.9
+                            });
+                        }
+
+                        return updatedCoords;
+                    });
+
                     setCurrentLocation(newCoord);
                 }
             );
@@ -151,14 +178,11 @@ export const useRouteTracker = () => {
             return false;
         }
 
-        // Attempt to start background tracking (Non-fatal)
         try {
             const bgTrackingStarted = await startBackgroundTracking();
             if (bgTrackingStarted) {
                 backgroundTrackingActive.current = true;
                 setIsBackgroundTracking(true);
-            } else {
-                console.log("Background tracking failed to start, but foreground is active.");
             }
         } catch (bgError) {
             console.warn("Background tracking error (ignored):", bgError);
@@ -168,13 +192,11 @@ export const useRouteTracker = () => {
     };
 
     const stopTracking = async () => {
-        // Stop foreground
         if (locationSubscription.current) {
             locationSubscription.current.remove();
             locationSubscription.current = null;
         }
 
-        // Merge background coords if needed
         let finalCoords = [...routeCoordinates];
         const wasBackgroundTracking = backgroundTrackingActive.current;
 
@@ -195,12 +217,18 @@ export const useRouteTracker = () => {
         }
 
         setIsTracking(false);
+
+        // [YENİ] Bitiş konuşması
+        const finalDist = calculateRouteDistance(finalCoords).toFixed(2);
+        Speech.speak(`Koşu tamamlandı. Toplam mesafe ${finalDist} kilometre.`, { language: 'tr-TR' });
+
         return { coords: finalCoords, duration: runDuration };
     };
 
     const resetTracking = async () => {
         setRouteCoordinates([]);
         setRunDuration(0);
+        lastSpokenKm.current = 0; // [YENİ]
         await clearBackgroundRouteCoords();
     };
 

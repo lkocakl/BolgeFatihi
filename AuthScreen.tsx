@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-    View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, 
-    ActivityIndicator, KeyboardAvoidingView, Platform 
+import {
+    View, Text, TextInput, StyleSheet, TouchableOpacity,
+    ActivityIndicator, KeyboardAvoidingView, Platform
 } from 'react-native';
 import {
     getAuth,
@@ -12,15 +12,16 @@ import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { app } from './firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Linking from 'expo-linking'; // [YENİ] Link açmak için
+import * as Linking from 'expo-linking';
 import { COLORS, SPACING, FONT_SIZES, SHADOWS } from './constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+// [YENİ] Alert hook'u eklendi
+import { useAlert } from './AlertContext';
 
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// [YENİ] Yasal metin linkleri (İleride kendi sitenle değiştir)
-const PRIVACY_POLICY_URL = 'https://hammerhead-stocking-1fe.notion.site/2b7174221fab80378cc7c71ddf4cfe92?source=copy_link'; 
+const PRIVACY_POLICY_URL = 'https://hammerhead-stocking-1fe.notion.site/2b7174221fab80378cc7c71ddf4cfe92?source=copy_link';
 const TERMS_OF_USE_URL = 'https://hammerhead-stocking-1fe.notion.site/2b7174221fab80a781b2d6041b9cb87c?source=copy_link';
 
 const AuthScreen = () => {
@@ -29,20 +30,20 @@ const AuthScreen = () => {
     const [isLogin, setIsLogin] = useState(true);
     const [loading, setLoading] = useState(false);
     const navigation = useNavigation();
+    const { showAlert } = useAlert(); // [YENİ]
 
     const isValidEmail = (email: string): boolean => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(email);
     };
 
-    // [YENİ] Link açma fonksiyonu
     const handleOpenLink = async (url: string) => {
         try {
             const supported = await Linking.canOpenURL(url);
             if (supported) {
                 await Linking.openURL(url);
             } else {
-                Alert.alert("Hata", "Bu link açılamıyor: " + url);
+                showAlert("Hata", "Bu link açılamıyor: " + url, 'error');
             }
         } catch (error) {
             console.error("Link hatası:", error);
@@ -51,17 +52,17 @@ const AuthScreen = () => {
 
     const handleAuthentication = async () => {
         if (!email || !password) {
-            Alert.alert("Hata", "Lütfen email ve şifre girin.");
+            showAlert("Eksik Bilgi", "Lütfen email ve şifre girin.", 'warning');
             return;
         }
 
         if (!isValidEmail(email)) {
-            Alert.alert("Hata", "Lütfen geçerli bir email adresi girin.");
+            showAlert("Geçersiz Email", "Lütfen geçerli bir email adresi girin.", 'warning');
             return;
         }
 
         if (password.length < 6) {
-            Alert.alert("Hata", "Şifre en az 6 karakter olmalıdır.");
+            showAlert("Zayıf Şifre", "Şifre en az 6 karakter olmalıdır.", 'warning');
             return;
         }
 
@@ -78,7 +79,6 @@ const AuthScreen = () => {
                     email: user.email,
                     username: user.email?.split('@')[0] || `kullanici_${user.uid.substring(0, 5)}`,
                     createdAt: serverTimestamp(),
-                    // [YENİ] Başlangıç istatistiklerini sıfırla (Batch hatasını önlemek için)
                     totalDistance: 0,
                     totalRoutes: 0,
                     totalScore: 0
@@ -100,7 +100,7 @@ const AuthScreen = () => {
             } else if (error.code === 'auth/invalid-email') {
                 errorMessage = "Geçersiz email adresi.";
             }
-            Alert.alert("Hata", errorMessage);
+            showAlert("Giriş Hatası", errorMessage, 'error');
         } finally {
             setLoading(false);
         }
@@ -174,7 +174,6 @@ const AuthScreen = () => {
                         </LinearGradient>
                     </TouchableOpacity>
 
-                    {/* [YENİ] Sadece "Kayıt Ol" modunda görünen Yasal Uyarı */}
                     {!isLogin && (
                         <View style={styles.legalContainer}>
                             <Text style={styles.legalText}>
@@ -296,7 +295,6 @@ const styles = StyleSheet.create({
         color: COLORS.primary,
         fontWeight: 'bold',
     },
-    // [YENİ] Yasal metin stilleri
     legalContainer: {
         marginTop: SPACING.m,
         alignItems: 'center',

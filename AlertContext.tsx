@@ -1,10 +1,10 @@
 import React, { createContext, useState, useContext, ReactNode } from 'react';
-import CustomAlert from './components/CustomAlert'; // MapScreen'de kullandığımız bileşen
+import CustomAlert, { AlertButton } from './components/CustomAlert';
 
-type AlertType = 'success' | 'error' | 'warning';
+type AlertType = 'success' | 'error' | 'warning' | 'info';
 
 interface AlertContextType {
-  showAlert: (title: string, message: string, type?: AlertType) => void;
+  showAlert: (title: string, message: string, type?: AlertType, buttons?: AlertButton[]) => void;
   hideAlert: () => void;
 }
 
@@ -15,16 +15,19 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [type, setType] = useState<AlertType>('warning');
+  const [buttons, setButtons] = useState<AlertButton[] | undefined>(undefined);
 
-  const showAlert = (title: string, message: string, type: AlertType = 'warning') => {
+  const showAlert = (title: string, message: string, type: AlertType = 'warning', buttons?: AlertButton[]) => {
     setTitle(title);
     setMessage(message);
     setType(type);
+    setButtons(buttons);
     setVisible(true);
   };
 
   const hideAlert = () => {
     setVisible(false);
+    setButtons(undefined);
   };
 
   return (
@@ -36,6 +39,7 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
         message={message}
         type={type}
         onClose={hideAlert}
+        buttons={buttons}
       />
     </AlertContext.Provider>
   );

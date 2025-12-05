@@ -1,4 +1,3 @@
-
 import { useState, useRef } from 'react';
 import { Region } from 'react-native-maps';
 import {
@@ -11,14 +10,15 @@ import { Coordinate } from '../utils';
 export interface ConqueredRoute {
     id: string;
     ownerId: string;
+    // [YENİ] Performans için kullanıcı adını doğrudan rota üzerinde tutuyoruz
+    ownerName?: string;
     coords: Coordinate[];
     distanceKm: number;
     gaspScore: number;
     claimedAt: Timestamp | FieldValue | undefined;
     durationSeconds?: number;
     geohash?: string;
-    // [YENİ] Kalkan süresi (Opsiyonel, çünkü her rotada olmayabilir)
-    shieldUntil?: Timestamp; 
+    shieldUntil?: Timestamp;
 }
 
 export const useRouteFetcher = () => {
@@ -34,6 +34,7 @@ export const useRouteFetcher = () => {
             latitude: region.latitude,
             longitude: region.longitude
         };
+        // Yarıçap hesaplaması (kabaca)
         const radiusInM = (region.latitudeDelta * 111320) / 2;
 
         const bounds = geohashQueryBounds([center.latitude, center.longitude], radiusInM);
@@ -76,13 +77,14 @@ export const useRouteFetcher = () => {
                         uniqueRoutesMap.set(doc.id, {
                             id: doc.id,
                             ownerId: data.ownerId || data.userId,
+                            // [YENİ] Veriyi al
+                            ownerName: data.ownerName,
                             coords: routeCoords,
                             distanceKm: data.distanceKm || 0,
                             gaspScore: data.gaspScore || 0,
                             claimedAt: data.claimedAt,
                             durationSeconds: data.durationSeconds,
                             geohash: data.geohash,
-                            // [YENİ] Veriyi al
                             shieldUntil: data.shieldUntil
                         });
                     }
@@ -100,6 +102,7 @@ export const useRouteFetcher = () => {
             }
         } catch (error) {
             console.error("Rotalar çekilirken hata: ", error);
+            // Hata durumunda geohash'i tekrar denenebilir yapmak için silebiliriz
             newGeohashesToLoad.forEach(hash => loadedGeohashes.current.delete(hash));
         } finally {
             setIsFetchingRoutes(false);

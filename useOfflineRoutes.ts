@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, addDoc, serverTimestamp, GeoPoint } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Alert } from 'react-native';
+// Alert.alert kaldırıldı
 
 const OFFLINE_ROUTES_KEY = 'offline_routes';
 
 export interface OfflineRoute {
-    id: string; // Temporary ID
+    id: string;
     userId: string;
     coords: { latitude: number; longitude: number }[];
     distanceKm: number;
@@ -38,22 +38,24 @@ export const useOfflineRoutes = () => {
         }
     };
 
-    const saveRouteOffline = async (route: Omit<OfflineRoute, 'id'>) => {
+    // [DÜZELTME] Fonksiyon artık Promise<boolean> dönüyor
+    const saveRouteOffline = async (route: Omit<OfflineRoute, 'id'>): Promise<boolean> => {
         try {
             const newRoute = { ...route, id: Date.now().toString() };
             const updatedRoutes = [...offlineRoutes, newRoute];
             setOfflineRoutes(updatedRoutes);
             await AsyncStorage.setItem(OFFLINE_ROUTES_KEY, JSON.stringify(updatedRoutes));
-            Alert.alert("Çevrimdışı Mod", "Rota cihazınıza kaydedildi. İnternet bağlantısı olduğunda senkronize edilecek.");
+            return true; // Başarılı
         } catch (e) {
             console.error("Failed to save route offline", e);
-            Alert.alert("Hata", "Rota kaydedilemedi.");
+            return false; // Hata
         }
     };
 
-    const syncRoutes = async () => {
-        if (offlineRoutes.length === 0) return;
-        if (isSyncing) return;
+    // [DÜZELTME] Eşitleme sonucu sayı dönüyor
+    const syncRoutes = async (): Promise<number> => {
+        if (offlineRoutes.length === 0) return 0;
+        if (isSyncing) return 0;
 
         setIsSyncing(true);
         const routesToKeep: OfflineRoute[] = [];
@@ -78,7 +80,7 @@ export const useOfflineRoutes = () => {
                 syncedCount++;
             } catch (error) {
                 console.error("Sync error for route", route.id, error);
-                routesToKeep.push(route); // Keep if failed
+                routesToKeep.push(route);
             }
         }
 
@@ -86,9 +88,7 @@ export const useOfflineRoutes = () => {
         await AsyncStorage.setItem(OFFLINE_ROUTES_KEY, JSON.stringify(routesToKeep));
         setIsSyncing(false);
 
-        if (syncedCount > 0) {
-            Alert.alert("Senkronizasyon", `${syncedCount} rota başarıyla yüklendi!`);
-        }
+        return syncedCount;
     };
 
     return {

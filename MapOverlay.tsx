@@ -2,7 +2,6 @@ import React from 'react';
 import { Polyline, Polygon, Marker } from 'react-native-maps';
 import { Coordinate } from '../utils';
 import { ConqueredRoute } from '../hooks/useRouteFetcher';
-import { UserMap } from '../hooks/useUserMap';
 import { COLORS } from '../constants/theme';
 import { Platform } from 'react-native';
 
@@ -11,7 +10,7 @@ interface MapOverlayProps {
     visibleRoutes: ConqueredRoute[];
     userId: string;
     selectedRoute: ConqueredRoute | null;
-    userMap: UserMap;
+    // [DEĞİŞİKLİK] userMap artık gerekmiyor, kaldırdık
     handleRoutePress: (route: ConqueredRoute) => void;
     getRouteMidpoint: (coords: Coordinate[]) => Coordinate;
     userActiveColor?: string;
@@ -22,7 +21,6 @@ const MapOverlay = ({
     visibleRoutes,
     userId,
     selectedRoute,
-    userMap,
     handleRoutePress,
     getRouteMidpoint,
     userActiveColor = COLORS.primary
@@ -33,13 +31,13 @@ const MapOverlay = ({
             {visibleRoutes.map((route) => {
                 const isOwner = route.ownerId === userId;
                 const isSelected = selectedRoute?.id === route.id;
-                
-                const fillColor = isOwner 
-                    ? (userActiveColor + '40') 
+
+                const fillColor = isOwner
+                    ? (userActiveColor + '40')
                     : 'rgba(255, 0, 0, 0.2)';
-                
-                const strokeColor = isOwner 
-                    ? userActiveColor 
+
+                const strokeColor = isOwner
+                    ? userActiveColor
                     : 'rgba(255, 0, 0, 0.5)';
 
                 return (
@@ -56,7 +54,8 @@ const MapOverlay = ({
                         {isSelected && (
                             <Marker
                                 coordinate={getRouteMidpoint(route.coords)}
-                                title={isOwner ? "Senin Bölgen" : `${userMap[route.ownerId] || 'Bilinmeyen Fatih'}`}
+                                // [YENİ] İsmi doğrudan rotadan alıyoruz
+                                title={isOwner ? "Senin Bölgen" : (route.ownerName || 'Bilinmeyen Fatih')}
                                 description={`Puan: ${route.gaspScore}`}
                             />
                         )}
@@ -64,7 +63,7 @@ const MapOverlay = ({
                 );
             })}
 
-            {/* [DÜZELTME] Aktif Koşu Rotası - Tek satırda koşullu atama */}
+            {/* Aktif Koşu Rotası */}
             {routeCoordinates.length > 0 && (
                 <Polyline
                     coordinates={routeCoordinates}
@@ -72,8 +71,6 @@ const MapOverlay = ({
                     strokeColor={userActiveColor}
                     zIndex={100}
                     lineCap="round"
-                    // Hatayı düzelten kısım: Tek bir lineDashPattern tanımı
-                    // Android ise [5, 20], iOS ise [0, 15] kullan
                     lineDashPattern={Platform.OS === 'android' ? [5, 20] : [0, 15]}
                 />
             )}

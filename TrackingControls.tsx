@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
+import { SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useTheme } from '../ThemeContext';
+import { useTranslation } from 'react-i18next'; // [YENİ]
 
 interface TrackingControlsProps {
     isTracking: boolean;
@@ -24,6 +26,9 @@ const TrackingControls = ({
     onToggleTracking,
     formatDuration
 }: TrackingControlsProps) => {
+    const { colors, isDark } = useTheme();
+    const { t } = useTranslation(); // [YENİ]
+
     const handlePress = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         onToggleTracking();
@@ -31,22 +36,20 @@ const TrackingControls = ({
 
     return (
         <>
-            {/* Stats Card - Floating Top Left */}
             {isTracking && (
-                <View style={styles.statCard}>
+                <View style={[styles.statCard, { backgroundColor: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)' }]}>
                     <View style={styles.statRow}>
-                        <MaterialCommunityIcons name="clock-outline" size={20} color={COLORS.primary} />
-                        <Text style={styles.statValue}>{formatDuration(runDuration)}</Text>
+                        <MaterialCommunityIcons name="clock-outline" size={20} color={colors.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{formatDuration(runDuration)}</Text>
                     </View>
-                    <View style={styles.divider} />
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
                     <View style={styles.statRow}>
-                        <MaterialCommunityIcons name="map-marker-distance" size={20} color={COLORS.secondaryDark} />
-                        <Text style={styles.statValue}>{distanceKm.toFixed(2)} <Text style={styles.unit}>KM</Text></Text>
+                        <MaterialCommunityIcons name="map-marker-distance" size={20} color={colors.secondaryDark} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{distanceKm.toFixed(2)} <Text style={[styles.unit, { color: colors.textSecondary }]}>{t('routeHistory.km')}</Text></Text>
                     </View>
                 </View>
             )}
 
-            {/* Bottom Control Button */}
             <View style={styles.buttonContainer}>
                 <TouchableOpacity
                     onPress={handlePress}
@@ -55,9 +58,9 @@ const TrackingControls = ({
                 >
                     <LinearGradient
                         colors={
-                            (isSaving ? [COLORS.textSecondary, COLORS.textSecondary] :
-                                isTracking ? [COLORS.error, '#B71C1C'] :
-                                    COLORS.primaryGradient) as [string, string, ...string[]]
+                            (isSaving ? [colors.textSecondary, colors.textSecondary] :
+                                isTracking ? [colors.error, '#B71C1C'] :
+                                    colors.primaryGradient) as [string, string, ...string[]]
                         }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
@@ -71,10 +74,10 @@ const TrackingControls = ({
                         />
                         <Text style={styles.buttonText}>
                             {isSaving
-                                ? 'KAYDEDİLİYOR...'
+                                ? t('map.saving')
                                 : isTracking
-                                    ? 'DURDUR & KAYDET'
-                                    : 'KOŞUYA BAŞLA'}
+                                    ? t('map.stopSave')
+                                    : t('map.startRun')}
                         </Text>
                     </LinearGradient>
                 </TouchableOpacity>
@@ -85,60 +88,15 @@ const TrackingControls = ({
 
 const styles = StyleSheet.create({
     statCard: {
-        position: 'absolute',
-        top: 60,
-        left: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        borderRadius: 16,
-        padding: SPACING.m,
-        ...SHADOWS.medium,
-        zIndex: 100,
-        minWidth: 140,
+        position: 'absolute', top: 60, left: 20, borderRadius: 16, padding: SPACING.m, ...SHADOWS.medium, zIndex: 100, minWidth: 140,
     },
-    statRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 4,
-    },
-    statValue: {
-        fontSize: FONT_SIZES.l,
-        fontWeight: '700',
-        color: COLORS.text,
-        marginLeft: SPACING.s,
-    },
-    unit: {
-        fontSize: FONT_SIZES.xs,
-        color: COLORS.textSecondary,
-        fontWeight: '600',
-    },
-    divider: {
-        height: 1,
-        backgroundColor: COLORS.border,
-        marginVertical: SPACING.s,
-    },
-    buttonContainer: {
-        position: 'absolute',
-        bottom: 50,
-        width: '100%',
-        alignItems: 'center',
-        paddingHorizontal: SPACING.l,
-    },
-    mainButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 40,
-        borderRadius: 30,
-        width: width * 0.8,
-        ...SHADOWS.medium,
-    },
-    buttonText: {
-        color: 'white',
-        fontSize: FONT_SIZES.m,
-        fontWeight: '800',
-        letterSpacing: 1,
-    },
+    statRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
+    statValue: { fontSize: FONT_SIZES.l, fontWeight: '700', marginLeft: SPACING.s },
+    unit: { fontSize: FONT_SIZES.xs, fontWeight: '600' },
+    divider: { height: 1, marginVertical: SPACING.s },
+    buttonContainer: { position: 'absolute', bottom: 50, width: '100%', alignItems: 'center', paddingHorizontal: SPACING.l },
+    mainButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, paddingHorizontal: 40, borderRadius: 30, width: width * 0.8, ...SHADOWS.medium },
+    buttonText: { color: 'white', fontSize: FONT_SIZES.m, fontWeight: '800', letterSpacing: 1 },
 });
 
 export default TrackingControls;

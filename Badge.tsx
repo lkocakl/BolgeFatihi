@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
+import { SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
+import { useTheme } from '../ThemeContext';
 
 interface BadgeProps {
     name: string;
@@ -12,24 +13,30 @@ interface BadgeProps {
 }
 
 const Badge = ({ name, description, icon, isUnlocked }: BadgeProps) => {
+    const { colors, isDark } = useTheme();
+
     return (
-        <View style={[styles.container, !isUnlocked && styles.lockedContainer]}>
+        <View style={[
+            styles.container,
+            { backgroundColor: colors.surface },
+            !isUnlocked && { backgroundColor: isDark ? '#333' : '#F5F5F5', opacity: 0.7 }
+        ]}>
             <LinearGradient
-                colors={isUnlocked ? COLORS.primaryGradient as [string, string, ...string[]] : ['#E0E0E0', '#BDBDBD']}
+                colors={isUnlocked ? colors.primaryGradient as [string, string] : ['#BDBDBD', '#757575']}
                 style={styles.iconContainer}
             >
                 <MaterialCommunityIcons
                     name={icon as any}
                     size={24}
-                    color={isUnlocked ? 'white' : '#757575'}
+                    color={isUnlocked ? 'white' : '#E0E0E0'}
                 />
             </LinearGradient>
             <View style={styles.textContainer}>
-                <Text style={[styles.name, !isUnlocked && styles.lockedText]}>{name}</Text>
-                <Text style={styles.description}>{description}</Text>
+                <Text style={[styles.name, { color: colors.text }, !isUnlocked && { color: colors.textSecondary }]}>{name}</Text>
+                <Text style={[styles.description, { color: colors.textSecondary }]}>{description}</Text>
             </View>
             {!isUnlocked && (
-                <MaterialCommunityIcons name="lock" size={16} color="#757575" style={styles.lockIcon} />
+                <MaterialCommunityIcons name="lock" size={16} color={colors.textSecondary} style={styles.lockIcon} />
             )}
         </View>
     );
@@ -39,16 +46,10 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.surface,
         padding: SPACING.m,
         borderRadius: 12,
         marginBottom: SPACING.s,
         ...SHADOWS.small,
-    },
-    lockedContainer: {
-        opacity: 0.7,
-        backgroundColor: '#F5F5F5',
-        elevation: 0,
     },
     iconContainer: {
         width: 50,
@@ -64,15 +65,10 @@ const styles = StyleSheet.create({
     name: {
         fontSize: FONT_SIZES.m,
         fontWeight: 'bold',
-        color: COLORS.text,
         marginBottom: 2,
-    },
-    lockedText: {
-        color: '#757575',
     },
     description: {
         fontSize: FONT_SIZES.xs,
-        color: COLORS.textSecondary,
     },
     lockIcon: {
         marginLeft: SPACING.s,

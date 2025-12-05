@@ -2,7 +2,14 @@ import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
+import { SPACING, FONT_SIZES, SHADOWS } from '../constants/theme';
+import { useTheme } from '../ThemeContext'; // [YENİ] Tema kullanımı
+
+export interface AlertButton {
+    text: string;
+    onPress?: () => void;
+    style?: 'cancel' | 'default' | 'destructive';
+}
 
 interface CustomAlertProps {
     visible: boolean;
@@ -10,11 +17,14 @@ interface CustomAlertProps {
     message: string;
     onClose: () => void;
     type?: 'success' | 'error' | 'warning' | 'info';
+    buttons?: AlertButton[];
 }
 
 const { width } = Dimensions.get('window');
 
-const CustomAlert = ({ visible, title, message, onClose, type = 'warning' }: CustomAlertProps) => {
+const CustomAlert = ({ visible, title, message, onClose, type = 'warning', buttons }: CustomAlertProps) => {
+    const { colors, isDark } = useTheme(); // [YENİ]
+
     const getIcon = () => {
         switch (type) {
             case 'success': return 'check-circle';
@@ -26,12 +36,14 @@ const CustomAlert = ({ visible, title, message, onClose, type = 'warning' }: Cus
 
     const getColor = () => {
         switch (type) {
-            case 'success': return COLORS.primary;
-            case 'error': return COLORS.error;
-            case 'warning': return '#FFA000';
-            default: return COLORS.secondary;
+            case 'success': return colors.success;
+            case 'error': return colors.error;
+            case 'warning': return colors.warning;
+            default: return colors.secondary;
         }
     };
+
+    const actionButtons = buttons && buttons.length > 0 ? buttons : [{ text: 'Tamam', onPress: onClose }];
 
     return (
         <Modal
@@ -41,28 +53,50 @@ const CustomAlert = ({ visible, title, message, onClose, type = 'warning' }: Cus
             onRequestClose={onClose}
         >
             <View style={styles.overlay}>
-                <View style={styles.container}>
+                <View style={[styles.container, { backgroundColor: colors.surface }]}>
                     <LinearGradient
-                        colors={[COLORS.surface, '#F5F5F5']}
+                        // Dark modda gradient yerine düz renk veya koyu geçiş
+                        colors={isDark ? [colors.surface, colors.surface] : [colors.surface, '#F5F5F5']}
                         style={styles.content}
                     >
                         <View style={[styles.iconContainer, { backgroundColor: getColor() + '20' }]}>
                             <MaterialCommunityIcons name={getIcon()} size={40} color={getColor()} />
                         </View>
 
-                        <Text style={styles.title}>{title}</Text>
-                        <Text style={styles.message}>{message}</Text>
+                        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+                        <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
 
-                        <TouchableOpacity onPress={onClose} style={styles.buttonContainer}>
-                            <LinearGradient
-                                colors={COLORS.primaryGradient as [string, string, ...string[]]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={styles.button}
-                            >
-                                <Text style={styles.buttonText}>Tamam</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
+                        <View style={styles.buttonContainer}>
+                            {actionButtons.map((btn, index) => (
+                                <TouchableOpacity
+                                    key={index}
+                                    onPress={() => {
+                                        if (btn.onPress) btn.onPress();
+                                        onClose();
+                                    }}
+                                    style={[
+                                        styles.button,
+                                        btn.style === 'cancel' ? { backgroundColor: isDark ? '#333' : '#E0E0E0' } : {},
+                                        actionButtons.length > 1 ? { flex: 1, marginHorizontal: 5 } : { width: '100%' }
+                                    ]}
+                                >
+                                    {btn.style !== 'cancel' ? (
+                                        <LinearGradient
+                                            colors={btn.style === 'destructive' ? [colors.error, '#D32F2F'] : colors.primaryGradient as [string, string]}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={styles.gradient}
+                                        >
+                                            <Text style={styles.buttonText}>{btn.text}</Text>
+                                        </LinearGradient>
+                                    ) : (
+                                        <View style={styles.cancelButtonInner}>
+                                            <Text style={[styles.buttonText, { color: colors.textSecondary }]}>{btn.text}</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                        </View>
                     </LinearGradient>
                 </View>
             </View>
@@ -98,25 +132,35 @@ const styles = StyleSheet.create({
     title: {
         fontSize: FONT_SIZES.l,
         fontWeight: 'bold',
-        color: COLORS.text,
         marginBottom: SPACING.s,
         textAlign: 'center',
     },
     message: {
         fontSize: FONT_SIZES.m,
-        color: COLORS.textSecondary,
         textAlign: 'center',
         marginBottom: SPACING.l,
         lineHeight: 22,
     },
     buttonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
         width: '100%',
+        marginTop: SPACING.s,
+    },
+    button: {
         borderRadius: 12,
         overflow: 'hidden',
     },
-    button: {
+    cancelButtonInner: {
         paddingVertical: SPACING.m,
         alignItems: 'center',
+        justifyContent: 'center'
+    },
+    gradient: {
+        paddingVertical: SPACING.m,
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%'
     },
     buttonText: {
         color: 'white',

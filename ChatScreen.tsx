@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-    View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Image 
+import {
+    View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Image, ActivityIndicator, RefreshControl
 } from 'react-native';
-import { 
-    collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, increment 
+import {
+    collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc, increment, limitToLast
 } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import { db } from './firebaseConfig';
@@ -11,39 +11,44 @@ import { useAuth } from './AuthContext';
 import { COLORS, SPACING, SHADOWS } from './constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { sendPushNotification } from './utils';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from './ThemeContext';
 
 const ChatScreen = ({ route }: any) => {
     const { friendId, friendName, chatId, profileImage } = route.params;
     const { user } = useAuth();
     const navigation = useNavigation();
+    const { colors, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
+
     const [messages, setMessages] = useState<any[]>([]);
     const [text, setText] = useState('');
+    // [YENİ] Sayfalama için mesaj limiti state'i
+    const [limitCount, setLimitCount] = useState(25);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+
     const flatListRef = useRef<FlatList>(null);
 
     // Sohbet açıldığında kendi sayacımızı sıfırla
     useEffect(() => {
         if (!user || !chatId) return;
-
         const markAsRead = async () => {
             try {
                 const chatRef = doc(db, "chats", chatId);
-                // Hata almamak için updateDoc kullanıyoruz, belge yoksa catch'e düşer
-                await updateDoc(chatRef, {
-                    [`unreadCounts.${user.uid}`]: 0
-                });
-            } catch (error) {
-                console.log("Okundu bilgisi güncellenemedi (Normal, ilk mesaj olabilir)");
-            }
+                await updateDoc(chatRef, { [`unreadCounts.${user.uid}`]: 0 });
+            } catch (error) { }
         };
-
         markAsRead();
-    }, [chatId, user, messages.length]); // Mesaj sayısı değişince de tetikle (ekran açıkken gelen mesaj için)
+    }, [chatId, user, messages.length]);
 
+    // Mesajları dinle (limitToLast ile)
     useEffect(() => {
         if (!chatId) return;
 
+        setIsLoadingMore(true);
         const messagesRef = collection(db, "chats", chatId, "messages");
-        const q = query(messagesRef, orderBy("createdAt", "asc"));
+        // [YENİ] limitToLast kullanarak sadece son X mesajı getiriyoruz
+        const q = query(messagesRef, orderBy("createdAt", "asc"), limitToLast(limitCount));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const msgs = snapshot.docs.map(doc => ({
@@ -51,20 +56,32 @@ const ChatScreen = ({ route }: any) => {
                 ...doc.data()
             }));
             setMessages(msgs);
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            setIsLoadingMore(false);
+
+            // İlk yüklemede veya yeni mesaj geldiğinde (ve kullanıcı en alttaysa) kaydır
+            // Ancak eski mesajları yüklerken (limitCount arttığında) kaydırmamalıyız
+            if (limitCount === 25 || msgs.length <= limitCount) {
+                setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            }
         });
 
         return () => unsubscribe();
-    }, [chatId]);
+    }, [chatId, limitCount]); // limitCount değişince listener güncellenir
+
+    // [YENİ] Daha eski mesajları yükle
+    const loadOlderMessages = () => {
+        if (isLoadingMore) return;
+        console.log("Eski mesajlar yükleniyor...");
+        // Basitçe limiti artırarak önceki mesajları da kapsamasını sağlıyoruz
+        setLimitCount(prev => prev + 25);
+    };
 
     const handleSend = async () => {
         if (text.trim().length === 0 || !user) return;
-
         const messageText = text.trim();
-        setText(''); // Hızlı UI tepkisi için önce temizle
+        setText('');
 
         try {
-            // 1. Mesajı Alt Koleksiyona Ekle
             const messagesRef = collection(db, "chats", chatId, "messages");
             await addDoc(messagesRef, {
                 text: messageText,
@@ -72,160 +89,155 @@ const ChatScreen = ({ route }: any) => {
                 createdAt: serverTimestamp()
             });
 
-            // 2. Ana Sohbet Belgesini Güncelle (Bildirim Sayacı Burada)
             const chatRef = doc(db, "chats", chatId);
-            
-            // setDoc ile merge: true kullanarak hem oluşturma hem güncelleme garantiye alınır
-            await setDoc(chatRef, {
-                lastMessage: messageText,
-                lastMessageTime: serverTimestamp(),
-                participants: [user.uid, friendId], // Katılımcıları her zaman güncelle/garantile
-                [`unreadCounts.${friendId}`]: increment(1) // Karşı tarafın sayacını artır
-            }, { merge: true });
+            const chatDoc = await getDoc(chatRef);
 
-            // 3. Bildirim Gönder
+            if (chatDoc.exists()) {
+                await updateDoc(chatRef, {
+                    lastMessage: messageText,
+                    lastMessageTime: serverTimestamp(),
+                    [`unreadCounts.${friendId}`]: increment(1)
+                });
+            } else {
+                await setDoc(chatRef, {
+                    participants: [user.uid, friendId],
+                    lastMessage: messageText,
+                    lastMessageTime: serverTimestamp(),
+                    unreadCounts: { [user.uid]: 0, [friendId]: 1 }
+                });
+            }
+
             const friendUserDoc = await getDoc(doc(db, "users", friendId));
             if (friendUserDoc.exists()) {
                 const friendData = friendUserDoc.data();
-                const friendToken = friendData.expoPushToken;
-
-                if (friendToken) {
-                    await sendPushNotification(
-                        friendToken,
-                        "Yeni Mesaj 💬",
-                        `Mesajın var: ${messageText}`
-                    );
+                if (friendData.expoPushToken) {
+                    await sendPushNotification(friendData.expoPushToken, "Yeni Mesaj 💬", `Mesajın var: ${messageText}`);
                 }
             }
-
         } catch (error) {
             console.error("Mesaj gönderme hatası:", error);
-            setText(messageText); // Hata olursa metni geri getir
+            setText(messageText);
         }
     };
 
     return (
-        <KeyboardAvoidingView 
-            style={styles.container} 
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} 
-        >
-            <View style={styles.header}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.header, { backgroundColor: colors.surface, paddingTop: Math.max(insets.top, 20) + 10 }]}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <MaterialCommunityIcons name="arrow-left" size={28} color={COLORS.text} />
+                    <MaterialCommunityIcons name="arrow-left" size={28} color={colors.text} />
                 </TouchableOpacity>
-                
-                <View style={styles.headerTitleContainer}> 
+                <View style={styles.headerTitleContainer}>
                     {profileImage ? (
                         <Image source={{ uri: profileImage }} style={styles.avatar} />
                     ) : (
                         <View style={styles.avatarPlaceholder}>
-                                <Text style={styles.avatarText}>{friendName?.charAt(0).toUpperCase()}</Text>
+                            <Text style={styles.avatarText}>{friendName?.charAt(0).toUpperCase()}</Text>
                         </View>
                     )}
-                    <Text style={styles.headerTitle}>{friendName}</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>{friendName}</Text>
                 </View>
-                
                 <View style={{ width: 28 }} />
             </View>
 
-            <FlatList
-                ref={flatListRef}
-                data={messages}
-                keyExtractor={item => item.id}
-                contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => {
-                    const isMe = item.senderId === user?.uid;
-                    return (
-                        <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.friendMessage]}>
-                            <Text style={[styles.messageText, isMe ? { color: 'white' } : { color: COLORS.text }]}>
-                                {item.text}
-                            </Text>
-                        </View>
-                    );
-                }}
-            />
-
-            <View style={styles.inputContainer}>
-                <TextInput
-                    style={styles.input}
-                    value={text}
-                    onChangeText={setText}
-                    placeholder="Mesaj yaz..."
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+            >
+                <FlatList
+                    ref={flatListRef}
+                    data={messages}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.listContent}
+                    keyboardDismissMode="on-drag"
+                    // [YENİ] Yukarı çekince eskileri yükle (RefreshControl ile)
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={isLoadingMore && messages.length > 0} // Sadece veri varken dönen loading göster
+                            onRefresh={loadOlderMessages}
+                            tintColor={colors.primary}
+                        />
+                    }
+                    renderItem={({ item }) => {
+                        const isMe = item.senderId === user?.uid;
+                        return (
+                            <View style={[
+                                styles.messageBubble,
+                                isMe ? { backgroundColor: colors.primary, alignSelf: 'flex-end', borderBottomRightRadius: 2 }
+                                    : { backgroundColor: isDark ? '#333' : 'white', alignSelf: 'flex-start', borderBottomLeftRadius: 2 }
+                            ]}>
+                                <Text style={[styles.messageText, isMe ? { color: 'white' } : { color: colors.text }]}>
+                                    {item.text}
+                                </Text>
+                            </View>
+                        );
+                    }}
                 />
-                <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
-                    <MaterialCommunityIcons name="send" size={24} color="white" />
-                </TouchableOpacity>
-            </View>
-        </KeyboardAvoidingView>
+
+                <View style={[
+                    styles.inputContainer,
+                    { backgroundColor: colors.surface, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }
+                ]}>
+                    <TextInput
+                        style={[styles.input, { backgroundColor: isDark ? '#444' : '#F0F0F0', color: colors.text }]}
+                        value={text}
+                        onChangeText={setText}
+                        placeholder="Mesaj yaz..."
+                        placeholderTextColor={colors.textSecondary}
+                    />
+                    <TouchableOpacity style={[styles.sendButton, { backgroundColor: colors.primary }]} onPress={handleSend}>
+                        <MaterialCommunityIcons name="send" size={24} color="white" />
+                    </TouchableOpacity>
+                </View>
+            </KeyboardAvoidingView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F5F5F5' },
+    container: { flex: 1 },
     header: {
-        paddingTop: 50, 
-        paddingBottom: 15, 
+        paddingBottom: 15,
         paddingHorizontal: 15,
-        backgroundColor: 'white',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        ...SHADOWS.small, 
+        ...SHADOWS.small,
         zIndex: 10
     },
     backButton: { padding: 5 },
     headerTitleContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1, 
+        flex: 1,
         justifyContent: 'center',
         paddingLeft: 28
     },
-    headerTitle: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        color: COLORS.text, 
-        marginLeft: SPACING.s 
-    },
-    avatar: {
-        width: 32, 
-        height: 32, 
-        borderRadius: 16, 
-        backgroundColor: '#E0E0E0',
-    },
+    headerTitle: { fontSize: 18, fontWeight: 'bold', marginLeft: SPACING.s },
+    avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E0E0' },
     avatarPlaceholder: {
         width: 32, height: 32, borderRadius: 16, backgroundColor: '#E0E0E0',
         justifyContent: 'center', alignItems: 'center',
     },
-    avatarText: { 
-        fontSize: 16, fontWeight: 'bold', color: '#555' 
-    },
+    avatarText: { fontSize: 16, fontWeight: 'bold', color: '#555' },
     listContent: { padding: SPACING.m, paddingBottom: 20 },
     messageBubble: {
-        maxWidth: '80%', padding: 12, borderRadius: 16, marginBottom: 8,
-    },
-    myMessage: {
-        alignSelf: 'flex-end', backgroundColor: COLORS.primary,
-        borderBottomRightRadius: 2
-    },
-    friendMessage: {
-        alignSelf: 'flex-start', backgroundColor: 'white',
-        borderBottomLeftRadius: 2, ...SHADOWS.small
+        maxWidth: '80%', padding: 12, borderRadius: 16, marginBottom: 8, ...SHADOWS.small
     },
     messageText: { fontSize: 16 },
     inputContainer: {
-        flexDirection: 'row', padding: SPACING.m, backgroundColor: 'white',
-        alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE',
-        paddingBottom: Platform.OS === 'ios' ? SPACING.m + 10 : SPACING.m,
-        paddingTop: SPACING.s
+        flexDirection: 'row',
+        paddingHorizontal: SPACING.m,
+        paddingTop: SPACING.s,
+        alignItems: 'center',
+        borderTopWidth: 1,
     },
     input: {
-        flex: 1, backgroundColor: '#F0F0F0', borderRadius: 20,
-        paddingHorizontal: 15, paddingVertical: 10, marginRight: 10, fontSize: 16
+        flex: 1, borderRadius: 20,
+        paddingHorizontal: 15, paddingVertical: 10, marginRight: 10, fontSize: 16,
     },
     sendButton: {
-        backgroundColor: COLORS.primary, width: 44, height: 44,
+        width: 44, height: 44,
         borderRadius: 22, justifyContent: 'center', alignItems: 'center'
     }
 });

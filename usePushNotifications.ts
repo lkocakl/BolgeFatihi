@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as Constants from 'expo-constants';
 import { doc, updateDoc } from 'firebase/firestore';
+// [DÜZELTME] Dosya 'hooks' içinde olduğu için bir üst klasöre çıkıp firebaseConfig'i alıyoruz
 import { db } from '../firebaseConfig';
 
 // Uygulama açıkken bildirim gelirse nasıl davranacağını ayarla
@@ -31,8 +32,9 @@ export const usePushNotifications = (user: any) => {
 
     if (Platform.OS === 'android' && isExpoGo) {
       console.log(
-        'Expo Go Android push bildirimlerini desteklemiyor. Development build kullanın: https://docs.expo.dev/develop/development-builds/introduction/'
+        'Expo Go Android push bildirimlerini desteklemiyor. Development build kullanın.'
       );
+      // Emülatörde çalışırken hata vermemesi için return
       return;
     }
 
@@ -60,13 +62,8 @@ export const usePushNotifications = (user: any) => {
       }
 
       // Expo Push Token'ı al (ProjectId önemlidir)
-      // Not: app.json içinde eas.projectId olduğundan emin olunmalı veya manuel girilmeli
       try {
         const projectId = Constants.default.expoConfig?.extra?.eas?.projectId ?? Constants.default.easConfig?.projectId;
-        if (!projectId) {
-          console.log("Project ID bulunamadı, token alınamıyor.");
-          // Geliştirme ortamında (Expo Go) projectId olmadan da çalışabilir ama build alınca gerekir.
-        }
 
         token = (await Notifications.getExpoPushTokenAsync({
           projectId,

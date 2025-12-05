@@ -1,52 +1,56 @@
 import { Quest } from './AuthContext';
 
 export const QUEST_TYPES = {
-    DISTANCE: 'DISTANCE', // Hedef: KM
-    TIME: 'TIME',         // Hedef: Dakika
-    SCORE: 'SCORE',       // Hedef: Puan
-    CONQUER: 'CONQUER'    // Hedef: Rota Sayısı (Adet)
+    DISTANCE: 'DISTANCE',
+    TIME: 'TIME',
+    SCORE: 'SCORE',
+    CONQUER: 'CONQUER'
 };
 
-// Rastgele görev üretici
 export const generateDailyQuests = (): Quest[] => {
+    // ID çakışmasını önlemek için random ekliyoruz
+    const uniqueId = () => Math.random().toString(36).substr(2, 9);
+
     const quests: Quest[] = [
         {
-            id: 'q_dist_' + Date.now(),
+            id: `q_dist_${Date.now()}_${uniqueId()}`,
             type: 'DISTANCE',
-            target: Math.floor(Math.random() * 3) + 1, // 1 ile 3 km arası
+            target: Math.floor(Math.random() * 3) + 1,
             progress: 0,
             reward: 100,
-            description: 'Toplam {target} km koş',
+            descriptionKey: 'quests.distance', // Çeviri anahtarı
+            descriptionParams: { target: 0 }, // Parametre (aşağıda güncelleniyor)
             isClaimed: false
         },
         {
-            id: 'q_time_' + Date.now(),
+            id: `q_time_${Date.now()}_${uniqueId()}`,
             type: 'TIME',
-            target: (Math.floor(Math.random() * 2) + 1) * 10, // 10 veya 20 dakika
+            target: (Math.floor(Math.random() * 2) + 1) * 10,
             progress: 0,
             reward: 150,
-            description: 'Toplam {target} dakika koş',
+            descriptionKey: 'quests.time',
+            descriptionParams: { target: 0 },
             isClaimed: false
         },
         {
-            id: 'q_score_' + Date.now(),
+            id: `q_score_${Date.now()}_${uniqueId()}`,
             type: 'SCORE',
             target: 250,
             progress: 0,
             reward: 200,
-            description: 'Koşulardan {target} puan topla',
+            descriptionKey: 'quests.score',
+            descriptionParams: { target: 0 },
             isClaimed: false
         }
     ];
-    
-    // Görevlerin açıklamasındaki {target} kısmını sayıyla değiştir
+
+    // Target değerlerini params içine ata
     return quests.map(q => ({
         ...q,
-        description: q.description.replace('{target}', q.target.toString())
+        descriptionParams: { target: q.target }
     }));
 };
 
-// İlerlemeyi kontrol et ve güncelle
 export const updateQuestProgress = (quests: Quest[], stats: { distance: number, time: number, score: number, conquests: number }): Quest[] => {
     return quests.map(quest => {
         if (quest.isClaimed) return quest;
@@ -54,13 +58,12 @@ export const updateQuestProgress = (quests: Quest[], stats: { distance: number, 
         let newProgress = quest.progress;
 
         if (quest.type === 'DISTANCE') newProgress += stats.distance;
-        else if (quest.type === 'TIME') newProgress += stats.time; // Dakika cinsinden
+        else if (quest.type === 'TIME') newProgress += stats.time;
         else if (quest.type === 'SCORE') newProgress += stats.score;
         else if (quest.type === 'CONQUER') newProgress += stats.conquests;
 
-        // İlerleme hedefi geçmemeli (görsel açıdan) ama mantıken geçmiş sayılır
         if (newProgress > quest.target) newProgress = quest.target;
 
         return { ...quest, progress: newProgress };
     });
-};
+};  
