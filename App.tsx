@@ -7,11 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider, useAuth } from './AuthContext';
+import { AuthProvider } from './AuthContext'; // useAuth buradan kaldırıldı, store kullanacağız
+import { useUserStore } from './store/useUserStore'; // [YENİ]
+import { useSocialStore } from './store/useSocialStore'; // [YENİ]
 import { AlertProvider } from './AlertContext';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import ErrorBoundary from './ErrorBoundary';
-import './i18n'; // [YENİ] i18n yapılandırmasını yükle
+import './i18n';
 
 import UserProfileScreen from './UserProfileScreen';
 import RouteHistoryScreen from './RouteHistoryScreen';
@@ -27,16 +29,21 @@ import ChatScreen from './ChatScreen';
 import AchievementsScreen from './AchievementsScreen';
 
 import { usePushNotifications } from './hooks/usePushNotifications';
-import { useTranslation } from 'react-i18next'; // [YENİ]
+import { useTranslation } from 'react-i18next';
+import { navigationRef } from './navigationRef'; // [YENİ] Navigasyon referansı
 
 const Tab = createBottomTabNavigator();
 const RootStack = createStackNavigator();
 
 const AppNavigator = () => {
   const { theme, colors } = useTheme();
-  const { user, friendRequestsCount, unreadMessagesCount } = useAuth();
-  const { t } = useTranslation(); // [YENİ] Çeviri hook'u
-  usePushNotifications(user);
+  // [YENİ] Store'dan verileri çekiyoruz
+  const user = useUserStore(s => s.user);
+  const friendRequestsCount = useSocialStore(s => s.friendRequestsCount);
+  const unreadMessagesCount = useSocialStore(s => s.unreadMessagesCount);
+
+  const { t } = useTranslation();
+  usePushNotifications(user); // Bildirim hook'u burada çalışıyor
 
   const totalNotifications = friendRequestsCount + unreadMessagesCount;
   const navigationTheme = theme === 'dark' ? DarkTheme : DefaultTheme;
@@ -46,7 +53,6 @@ const AppNavigator = () => {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          // [GÜNCELLEME] İsimler yerine route.name kontrolü
           if (route.name === 'Harita') iconName = focused ? 'map' : 'map-outline';
           else if (route.name === 'Liderler') iconName = focused ? 'trophy' : 'trophy-outline';
           else if (route.name === 'Market') iconName = focused ? 'cart' : 'cart-outline';
@@ -61,11 +67,9 @@ const AppNavigator = () => {
           borderTopColor: colors.border,
         },
         headerShown: false,
-        // [YENİ] Tab isimlerini çevir
-        title: t(`common.${route.name.toLowerCase()}`) // Basitçe route adına göre çeviri
+        title: t(`common.${route.name.toLowerCase()}`)
       })}
     >
-      {/* [YENİ] options={{ title: t('...') }} ile başlıkları güncelle */}
       <Tab.Screen name="Harita" component={MapScreen} options={{ title: t('map.title') || 'Harita' }} />
       <Tab.Screen name="Liderler" component={LeaderboardScreen} options={{ title: t('leaderboard.title') || 'Liderler' }} />
       <Tab.Screen name="Market" component={ShopScreen} options={{ title: t('shop.title') }} />
@@ -92,7 +96,8 @@ const AppNavigator = () => {
   if (loading) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    // [YENİ] ref={navigationRef} eklendi
+    <NavigationContainer theme={navigationTheme} ref={navigationRef}>
       <RootStack.Navigator initialRouteName="AppTabs" screenOptions={{ headerShown: false }}>
         {!viewedOnboarding && (
           <RootStack.Screen name="Onboarding">

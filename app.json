@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bölge Fatihi",
     "slug": "BolgeFatihi",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -26,7 +26,7 @@
     "android": {
       "package": "com.kocak.BolgeFatihi",
       "softwareKeyboardLayoutMode": "resize",
-      "versionCode": 2,
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -4,10 +4,9 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as Constants from 'expo-constants';
 import { doc, updateDoc } from 'firebase/firestore';
-// [DÜZELTME] Dosya 'hooks' içinde olduğu için bir üst klasöre çıkıp firebaseConfig'i alıyoruz
 import { db } from '../firebaseConfig';
+import { navigate } from '../navigationRef'; // [YENİ]
 
-// Uygulama açıkken bildirim gelirse nasıl davranacağını ayarla
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -24,17 +23,12 @@ export const usePushNotifications = (user: any) => {
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
 
-  // Token alma ve izin isteme fonksiyonu
   async function registerForPushNotificationsAsync() {
     let token;
-
     const isExpoGo = Constants.default.appOwnership === 'expo';
 
     if (Platform.OS === 'android' && isExpoGo) {
-      console.log(
-        'Expo Go Android push bildirimlerini desteklemiyor. Development build kullanın.'
-      );
-      // Emülatörde çalışırken hata vermemesi için return
+      console.log('Expo Go Android push bildirimlerini desteklemiyor. Development build kullanın.');
       return;
     }
 
@@ -61,14 +55,9 @@ export const usePushNotifications = (user: any) => {
         return;
       }
 
-      // Expo Push Token'ı al (ProjectId önemlidir)
       try {
         const projectId = Constants.default.expoConfig?.extra?.eas?.projectId ?? Constants.default.easConfig?.projectId;
-
-        token = (await Notifications.getExpoPushTokenAsync({
-          projectId,
-        })).data;
-
+        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
         console.log("Expo Push Token:", token);
       } catch (e) {
         console.error("Token alma hatası:", e);
@@ -81,40 +70,48 @@ export const usePushNotifications = (user: any) => {
   }
 
   useEffect(() => {
-    // 1. İzin iste ve Token al
     registerForPushNotificationsAsync().then(token => {
       setExpoPushToken(token);
-
-      // 2. Eğer kullanıcı giriş yapmışsa, token'ı Firestore'a kaydet
       if (user && token) {
         const userRef = doc(db, "users", user.uid);
-        updateDoc(userRef, {
-          expoPushToken: token
-        }).catch(err => console.log("Token Firestore'a kaydedilemedi:", err));
+        updateDoc(userRef, { expoPushToken: token }).catch(err => console.log("Token Firestore'a kaydedilemedi:", err));
       }
     });
 
-    // 3. Bildirim dinleyicilerini ayarla
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       setNotification(notification);
     });
 
+    // [YENİ] Bildirime tıklanma olayı ve yönlendirme
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log(response);
+      const data = response.notification.request.content.data;
+
+      // Sohbet mesajı ise ChatScreen'e git
+      if (data?.type === 'chat' && data?.chatId) {
+        navigate('ChatScreen', {
+          chatId: data.chatId,
+          friendId: data.friendId,
+          friendName: data.friendName,
+          profileImage: data.profileImage
+        });
+      }
+
+      // Gasp bildirimi ise Harita'ya git
+      if (data?.type === 'gasp') {
+        navigate('Harita');
+      }
+
+      // Arkadaş isteği ise Sosyal'e git
+      if (data?.type === 'request') {
+        navigate('Sosyal');
+      }
     });
 
     return () => {
-      if (notificationListener.current) {
-        notificationListener.current.remove();
-      }
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
+      if (notificationListener.current) notificationListener.current.remove();
+      if (responseListener.current) responseListener.current.remove();
     };
   }, [user]);
 
-  return {
-    expoPushToken,
-    notification,
-  };
+  return { expoPushToken, notification };
 };

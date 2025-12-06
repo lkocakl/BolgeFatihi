@@ -7,7 +7,8 @@ import {
 } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import { db } from './firebaseConfig';
-import { useAuth } from './AuthContext';
+// [YENİ] AuthContext yerine Store
+import { useUserStore } from './store/useUserStore';
 import { COLORS, SPACING, SHADOWS } from './constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { sendPushNotification } from './utils';
@@ -16,20 +17,22 @@ import { useTheme } from './ThemeContext';
 
 const ChatScreen = ({ route }: any) => {
     const { friendId, friendName, chatId, profileImage } = route.params;
-    const { user } = useAuth();
+
+    // [YENİ] Zustand Store kullanımı
+    const user = useUserStore(state => state.user);
+    const userProfile = useUserStore(state => state.userProfile);
+
     const navigation = useNavigation();
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
 
     const [messages, setMessages] = useState<any[]>([]);
     const [text, setText] = useState('');
-    // [YENİ] Sayfalama için mesaj limiti state'i
     const [limitCount, setLimitCount] = useState(25);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
 
     const flatListRef = useRef<FlatList>(null);
 
-    // Sohbet açıldığında kendi sayacımızı sıfırla
     useEffect(() => {
         if (!user || !chatId) return;
         const markAsRead = async () => {
@@ -41,13 +44,11 @@ const ChatScreen = ({ route }: any) => {
         markAsRead();
     }, [chatId, user, messages.length]);
 
-    // Mesajları dinle (limitToLast ile)
     useEffect(() => {
         if (!chatId) return;
 
         setIsLoadingMore(true);
         const messagesRef = collection(db, "chats", chatId, "messages");
-        // [YENİ] limitToLast kullanarak sadece son X mesajı getiriyoruz
         const q = query(messagesRef, orderBy("createdAt", "asc"), limitToLast(limitCount));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -58,21 +59,16 @@ const ChatScreen = ({ route }: any) => {
             setMessages(msgs);
             setIsLoadingMore(false);
 
-            // İlk yüklemede veya yeni mesaj geldiğinde (ve kullanıcı en alttaysa) kaydır
-            // Ancak eski mesajları yüklerken (limitCount arttığında) kaydırmamalıyız
             if (limitCount === 25 || msgs.length <= limitCount) {
                 setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
             }
         });
 
         return () => unsubscribe();
-    }, [chatId, limitCount]); // limitCount değişince listener güncellenir
+    }, [chatId, limitCount]);
 
-    // [YENİ] Daha eski mesajları yükle
     const loadOlderMessages = () => {
         if (isLoadingMore) return;
-        console.log("Eski mesajlar yükleniyor...");
-        // Basitçe limiti artırarak önceki mesajları da kapsamasını sağlıyoruz
         setLimitCount(prev => prev + 25);
     };
 
@@ -107,11 +103,24 @@ const ChatScreen = ({ route }: any) => {
                 });
             }
 
+            // Bildirim Gönderme (Güncellendi)
             const friendUserDoc = await getDoc(doc(db, "users", friendId));
             if (friendUserDoc.exists()) {
                 const friendData = friendUserDoc.data();
                 if (friendData.expoPushToken) {
-                    await sendPushNotification(friendData.expoPushToken, "Yeni Mesaj 💬", `Mesajın var: ${messageText}`);
+                    // [YENİ] Data payload eklendi
+                    await sendPushNotification(
+                        friendData.expoPushToken,
+                        "Yeni Mesaj 💬",
+                        `${userProfile?.username || 'Biri'}: ${messageText}`,
+                        {
+                            type: 'chat',
+                            chatId: chatId,
+                            friendId: user.uid,
+                            friendName: userProfile?.username,
+                            profileImage: userProfile?.profileImage
+                        }
+                    );
                 }
             }
         } catch (error) {
@@ -150,10 +159,9 @@ const ChatScreen = ({ route }: any) => {
                     keyExtractor={item => item.id}
                     contentContainerStyle={styles.listContent}
                     keyboardDismissMode="on-drag"
-                    // [YENİ] Yukarı çekince eskileri yükle (RefreshControl ile)
                     refreshControl={
                         <RefreshControl
-                            refreshing={isLoadingMore && messages.length > 0} // Sadece veri varken dönen loading göster
+                            refreshing={isLoadingMore && messages.length > 0}
                             onRefresh={loadOlderMessages}
                             tintColor={colors.primary}
                         />

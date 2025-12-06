@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Polyline, Polygon, Marker } from 'react-native-maps';
 import { Coordinate } from '../utils';
 import { ConqueredRoute } from '../hooks/useRouteFetcher';
@@ -10,31 +10,32 @@ interface MapOverlayProps {
     visibleRoutes: ConqueredRoute[];
     userId: string;
     selectedRoute: ConqueredRoute | null;
-    // [DEĞİŞİKLİK] userMap artık gerekmiyor, kaldırdık
     handleRoutePress: (route: ConqueredRoute) => void;
     getRouteMidpoint: (coords: Coordinate[]) => Coordinate;
     userActiveColor?: string;
 }
 
-const MapOverlay = ({
-    routeCoordinates,
+// 1. KATMAN: Fethedilmiş Bölgeler (Statik)
+// Bu katman sadece 'visibleRoutes' veya seçim değiştiğinde render olur.
+// Kullanıcı koşarken (routeCoordinates değiştiğinde) TEKRAR RENDER OLMAZ.
+const ConqueredRegionsLayer = memo(({
     visibleRoutes,
     userId,
     selectedRoute,
     handleRoutePress,
     getRouteMidpoint,
-    userActiveColor = COLORS.primary
-}: MapOverlayProps) => {
+    userActiveColor
+}: Omit<MapOverlayProps, 'routeCoordinates'>) => {
+
     return (
         <>
-            {/* Fethedilmiş Rotalar (Bölgeler) */}
             {visibleRoutes.map((route) => {
                 const isOwner = route.ownerId === userId;
                 const isSelected = selectedRoute?.id === route.id;
 
                 const fillColor = isOwner
                     ? (userActiveColor + '40')
-                    : 'rgba(255, 0, 0, 0.2)';
+                    : 'rgba(255, 0, 0, 0.2)'; // Başkasının bölgesi kırmızımsı
 
                 const strokeColor = isOwner
                     ? userActiveColor
@@ -54,7 +55,6 @@ const MapOverlay = ({
                         {isSelected && (
                             <Marker
                                 coordinate={getRouteMidpoint(route.coords)}
-                                // [YENİ] İsmi doğrudan rotadan alıyoruz
                                 title={isOwner ? "Senin Bölgen" : (route.ownerName || 'Bilinmeyen Fatih')}
                                 description={`Puan: ${route.gaspScore}`}
                             />
@@ -62,20 +62,68 @@ const MapOverlay = ({
                     </React.Fragment>
                 );
             })}
+        </>
+    );
+}, (prevProps, nextProps) => {
+    // Performans için özel karşılaştırma
+    return (
+        prevProps.visibleRoutes === nextProps.visibleRoutes &&
+        prevProps.selectedRoute === nextProps.selectedRoute &&
+        prevProps.userActiveColor === nextProps.userActiveColor &&
+        prevProps.userId === nextProps.userId
+    );
+});
 
-            {/* Aktif Koşu Rotası */}
-            {routeCoordinates.length > 0 && (
-                <Polyline
-                    coordinates={routeCoordinates}
-                    strokeWidth={8}
-                    strokeColor={userActiveColor}
-                    zIndex={100}
-                    lineCap="round"
-                    lineDashPattern={Platform.OS === 'android' ? [5, 20] : [0, 15]}
-                />
-            )}
+// 2. KATMAN: Aktif Rota (Dinamik)
+// Sadece kullanıcı hareket ettiğinde render olur.
+const ActiveRouteLayer = memo(({
+    routeCoordinates,
+    userActiveColor
+}: {
+    routeCoordinates: Coordinate[],
+    userActiveColor: string
+}) => {
+    if (routeCoordinates.length === 0) return null;
+
+    return (
+        <Polyline
+            coordinates={routeCoordinates}
+            strokeWidth={8}
+            strokeColor={userActiveColor}
+            zIndex={100}
+            lineCap="round"
+            lineDashPattern={Platform.OS === 'android' ? [5, 20] : [0, 15]}
+        />
+    );
+});
+
+// Ana Bileşen
+const MapOverlay = ({
+    routeCoordinates,
+    visibleRoutes,
+    userId,
+    selectedRoute,
+    handleRoutePress,
+    getRouteMidpoint,
+    userActiveColor = COLORS.primary
+}: MapOverlayProps) => {
+    return (
+        <>
+            <ConqueredRegionsLayer
+                visibleRoutes={visibleRoutes}
+                userId={userId}
+                selectedRoute={selectedRoute}
+                handleRoutePress={handleRoutePress}
+                getRouteMidpoint={getRouteMidpoint}
+                userActiveColor={userActiveColor}
+            />
+
+            <ActiveRouteLayer
+                routeCoordinates={routeCoordinates}
+                userActiveColor={userActiveColor}
+            />
         </>
     );
 };
 
-export default MapOverlay;
+export default memo(MapOverlay);

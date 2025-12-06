@@ -1,18 +1,20 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
+import React, { createContext, useEffect, useContext, ReactNode } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { useUserStore } from './store/useUserStore';
+import { useSocialStore } from './store/useSocialStore';
 
-// [GÜNCELLENDİ] Quest yapısı dinamik hale getirildi
+// Tipleri dışa aktarmaya devam ediyoruz
 export interface Quest {
   id: string;
   type: 'DISTANCE' | 'TIME' | 'SCORE' | 'CONQUER';
   target: number;
   progress: number;
   reward: number;
-  descriptionKey: string; // Çeviri anahtarı (örn: 'quests.distance')
-  descriptionParams: any; // Parametreler (örn: { target: 5 })
+  descriptionKey: string;
+  descriptionParams: any;
   isClaimed: boolean;
 }
 
@@ -23,28 +25,9 @@ export interface PrivacyZone {
   isEnabled: boolean;
 }
 
-interface UserProfile {
-  username?: string;
-  email?: string;
-  profileImage?: string;
-  totalScore: number;
-  weeklyScore?: number;
-  expoPushToken?: string;
-  dailyQuests?: Quest[];
-  lastQuestDate?: string;
-  friends?: string[];
-  privacyZone?: PrivacyZone;
-  inventory?: {
-    colors?: string[];
-    activeColor?: string;
-    activePotion?: string | null;
-    shields?: number;
-  };
-}
-
 interface AuthContextType {
   user: User | null;
-  userProfile: UserProfile | null;
+  userProfile: any | null;
   loading: boolean;
   friendRequestsCount: number;
   unreadMessagesCount: number;
@@ -65,11 +48,20 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [friendRequestsCount, setFriendRequestsCount] = useState(0);
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  // 1. TÜM HOOK'LAR EN ÜSTTE OLMALI (DÜZELTME BURADA)
+
+  // Setter'lar
+  const setUser = useUserStore((s) => s.setUser);
+  const setUserProfile = useUserStore((s) => s.setUserProfile);
+  const setLoading = useUserStore((s) => s.setLoading);
+  const setSocialCounts = useSocialStore((s) => s.setCounts);
+
+  // State'ler (Bunları if(loading)'den önce çağırmalıyız)
+  const loading = useUserStore((s) => s.loading);
+  const currentUserState = useUserStore((s) => s.user);
+  const userProfileState = useUserStore((s) => s.userProfile);
+  const friendRequestsCountState = useSocialStore((s) => s.friendRequestsCount);
+  const unreadMessagesCountState = useSocialStore((s) => s.unreadMessagesCount);
 
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
@@ -79,21 +71,24 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
 
+      // Temizlik
       if (unsubscribeFirestore) unsubscribeFirestore();
       if (unsubscribeRequests) unsubscribeRequests();
       if (unsubscribeChats) unsubscribeChats();
 
       if (currentUser) {
+        // 1. Kullanıcı Profili Dinleyicisi
         const userDocRef = doc(db, "users", currentUser.uid);
         unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
+            setUserProfile(docSnap.data() as any);
           } else {
             setUserProfile(null);
           }
           setLoading(false);
         });
 
+        // 2. Arkadaş İstekleri Dinleyicisi
         const requestsQuery = query(
           collection(db, "friend_requests"),
           where("toId", "==", currentUser.uid),
@@ -101,9 +96,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         );
 
         unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
-          setFriendRequestsCount(snapshot.size);
+          // İstek sayısını güncelle, mesaj sayısını store'dan al
+          setSocialCounts(snapshot.size, useSocialStore.getState().unreadMessagesCount);
         });
 
+        // 3. Sohbet Mesajları Dinleyicisi
         const chatsQuery = query(
           collection(db, "chats"),
           where("participants", "array-contains", currentUser.uid)
@@ -117,15 +114,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
               totalUnread += data.unreadCounts[currentUser.uid];
             }
           });
-          setUnreadMessagesCount(totalUnread);
+          // Mesaj sayısını güncelle, istek sayısını store'dan al
+          setSocialCounts(useSocialStore.getState().friendRequestsCount, totalUnread);
         }, (error) => {
           console.log("Chat dinleme hatası:", error.message);
         });
 
       } else {
+        // Çıkış yapıldı
         setUserProfile(null);
-        setFriendRequestsCount(0);
-        setUnreadMessagesCount(0);
+        setSocialCounts(0, 0);
         setLoading(false);
       }
     });
@@ -140,8 +138,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const logout = async () => {
     await signOut(auth);
+    setUser(null);
+    setUserProfile(null);
+    setSocialCounts(0, 0);
   };
 
+  // 2. HOOK'LARDAN SONRA RETURN YAPABİLİRİZ
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -150,15 +152,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     );
   }
 
+  // Context değerlerini yukarıda çağırdığımız hook değişkenlerinden alıyoruz
+  const contextValue = {
+    user: currentUserState,
+    userProfile: userProfileState,
+    loading: loading,
+    friendRequestsCount: friendRequestsCountState,
+    unreadMessagesCount: unreadMessagesCountState,
+    logout
+  };
+
   return (
-    <AuthContext.Provider value={{
-      user,
-      userProfile,
-      loading,
-      friendRequestsCount,
-      unreadMessagesCount,
-      logout
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
